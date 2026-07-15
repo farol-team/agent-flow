@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Sync the agent-workflow kit into the current repo's .claude/.
+#
+# Kit-owned (overwritten, deletions propagate): .claude/{commands,prompts,hooks}
+# Project-owned (never touched): .claude/trello.json, .claude/constitution.md,
+#   .claude/project-context.md, .claude/settings.local.json,
+#   .claude/prompts/ui-design.md (optional per-project UI guide).
+#
+# Usage: bin/workflow-kit-sync            # sync from main
+#        KIT_REF=<branch|sha> bin/workflow-kit-sync
+# Requires: gh (authenticated), git, rsync.
+set -euo pipefail
+
+KIT_REPO="${KIT_REPO:-rodnik-ai/agent-workflow}"
+KIT_REF="${KIT_REF:-main}"
+ROOT="$(git rev-parse --show-toplevel)"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+gh repo clone "$KIT_REPO" "$TMP/kit" -- --depth 1 --branch "$KIT_REF" --quiet
+REV="$(git -C "$TMP/kit" rev-parse --short HEAD)"
+
+rsync -a --delete "$TMP/kit/kit/commands/" "$ROOT/.claude/commands/"
+rsync -a --delete --exclude ui-design.md "$TMP/kit/kit/prompts/" "$ROOT/.claude/prompts/"
+rsync -a --delete "$TMP/kit/kit/hooks/" "$ROOT/.claude/hooks/"
+chmod +x "$ROOT/.claude/hooks/"*.sh
+
+printf '%s %s %s\n' "$KIT_REPO" "$KIT_REF" "$REV" > "$ROOT/.claude/KIT_REVISION"
+
+echo "Kit synced from $KIT_REPO@$KIT_REF ($REV)."
+echo "Changes (empty = already in sync):"
+git -C "$ROOT" status --short -- .claude/ || true

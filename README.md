@@ -73,10 +73,28 @@ docs/                   deeper docs (adoption guide, design notes)
   Human Questions, Plan Proposed, Ready for AI, In Progress, Review,
   Blocked, Done.
 
+## Canonical source & staying in sync
+
+**This repo is the canonical source of the kit.** Consumers do not edit
+kit files in their own repo — they edit HERE (PR to this repo), then pull:
+
+1. Copy `scripts/workflow-kit-sync` into your repo (e.g. `bin/`) once,
+   during adoption.
+2. Run `bin/workflow-kit-sync` to pull the latest kit. It overwrites
+   `.claude/{commands,prompts,hooks}` (deletions propagate), never touches
+   project-owned files (`trello.json`, `constitution.md`,
+   `project-context.md`, `settings.local.json`, optional
+   `prompts/ui-design.md`), and records the kit SHA in
+   `.claude/KIT_REVISION`.
+3. Review the diff, commit.
+
+Consumers: `rodnik-ai/rodnik-web` (first).
+
 ## Adoption (human or agent — ~15 minutes)
 
 1. Copy `kit/` into the target repo as `.claude/` (commands/, prompts/,
-   hooks/ — keep paths). `chmod +x .claude/hooks/*.sh`.
+   hooks/ — keep paths) and `scripts/workflow-kit-sync` as
+   `bin/workflow-kit-sync`. `chmod +x .claude/hooks/*.sh bin/workflow-kit-sync`.
 2. Create `.claude/constitution.md` from `constitution-template.md`. Keep
    the universal articles; write 3–7 PROJECT articles — each earned by a
    real incident/constraint (see `examples/`).
