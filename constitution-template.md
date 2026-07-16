@@ -58,8 +58,18 @@ HTTP APIs, paid services, clock).
      earned: cite the incident, constraint, or hard decision behind it.
      See examples/constitution-rodnik-web.md for a real, incident-driven
      set (multi-tenancy, job-queue isolation, external-API write bans,
-     schema-dump mirroring). Aim for 3-7 articles; a constitution nobody
-     can hold in their head stops being checked. -->
+     schema-dump mirroring). Aim for 3-7 articles per section; a
+     constitution nobody can hold in their head stops being checked.
+
+     TARGET SCOPING (multi-repo boards): when trello.json defines several
+     execution targets, split project articles into per-target sections —
+     `## Project articles (<target-name>)`, names matching the `targets`
+     keys — plus an optional `## Project articles (all targets)` for
+     cross-cutting rules. A card's Constitution gate covers the universal
+     articles + its own target's section (+ the all-targets section).
+     A constitution with a single unnamed `## Project articles` section
+     applies to every target (single-repo default). Prefix article
+     numbers per section (P1…, T1…) — numbers are never reused. -->
 
 ### Article P1 — <name>
 *(Rationale: <incident / decision, one line>.)*

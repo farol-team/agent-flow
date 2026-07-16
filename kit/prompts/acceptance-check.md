@@ -138,8 +138,13 @@ Gap: `Commit <short-sha>: <specific violation>`.
 
 ## 7. Constitution compliance (diff, not words)
 
-Read `.claude/constitution.md` (universal + project articles) and the
-plan's `## Constitution gate`. Verify the actual DIFF against each
+Read `.claude/constitution.md` and the plan's `## Constitution gate`.
+The applicable articles are the universal ones + the project section for
+the card's execution target (`## Project articles (<target>)`; a single
+unnamed `## Project articles` section applies to every target) + any
+`(all targets)` section — and any article the plan's gate itself lists.
+If the plan's gate OMITTED an applicable article, that omission is itself
+an important gap. Verify the actual DIFF against each applicable
 article — the plan's own gate verdicts are claims, not evidence:
 
 - Article I: test/spec files exist in the diff and the test commits

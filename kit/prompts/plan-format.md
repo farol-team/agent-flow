@@ -81,8 +81,13 @@ worker doesn't drift and scope stays cut to one PR>
   If L → reconsider SPLIT.
 
 ## Constitution gate
-One line per article from `.claude/constitution.md` (universal + project
-articles). Verdict per article: `pass` / `n/a` / `violates — <explicit
+One line per article from `.claude/constitution.md` that applies to this
+card's execution target: the universal articles + `## Project articles
+(<target>)` for the card's target (per the `repo:` label /
+`default_target`) + any `## Project articles (all targets)` section. A
+single unnamed `## Project articles` section applies to every target.
+Other targets' sections are OMITTED entirely — do not list them as n/a.
+Verdict per article: `pass` / `n/a` / `violates — <explicit
 justification>`. Examples:
 - I Test-First: pass — specs in ## Files, written before impl
 - P3 Queue isolation: pass — new job declared `queue_as :low`

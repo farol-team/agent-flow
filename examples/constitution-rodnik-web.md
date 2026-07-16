@@ -65,7 +65,7 @@ true process boundaries (external HTTP APIs, paid services, clock).
 
 ---
 
-## Project articles (rodnik-web)
+## Project articles (web)
 
 ### Article P1 — Tenancy Above All
 Every query, index, uniqueness constraint, and background job is scoped by
@@ -100,3 +100,33 @@ new column on a table shared with the queue/cable databases must be
 mirrored into all three dumps: `db/schema.rb`, `db/queue_schema.rb`,
 `db/cable_schema.rb` — `maintain_test_schema!` clobbers columns that exist
 in only one.
+
+
+---
+
+## Project articles (tauri)
+
+*(Execution target `tauri` — the desktop recorder app, ../rodnik-app,
+Rust/Tauri.)*
+
+### Article T1 — Recording Is Sacred
+The audio/capture path never blocks and never panics: no synchronous IO,
+network calls, or lock contention on the capture thread; heavy work is
+handed off through channels. A dropped frame is a bug; a killed recording
+is an incident.
+
+### Article T2 — No Panics in Production Paths
+No `unwrap()` / `expect()` / `panic!` outside tests and build scripts.
+Errors propagate via `Result` and are handled where recovery is possible;
+the app degrades (skips a feature), it does not crash mid-meeting.
+
+### Article T3 — Crash-Safe Capture
+A crash or power loss may not lose an in-progress recording: capture
+state is written incrementally to disk and recoverable on next launch.
+Any change to the recording pipeline states in the PLAN how the
+in-progress artifact survives interruption.
+
+### Article T4 — Content Stays Local Until Upload
+Recordings and transcripts never leave the machine except through the
+documented upload path to the backend. No third-party telemetry or crash
+reporting that could carry meeting content.

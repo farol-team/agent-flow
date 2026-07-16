@@ -76,9 +76,13 @@ clearly spans two target repos at once (ask the human to split by repo).
 
 Before deciding, read `.claude/constitution.md` — the non-negotiable
 articles every code PLAN must gate against (step F3 requires a
-`## Constitution gate` verdict per article). If the card as written cannot
-satisfy an article (e.g. it asks for a full-table scan in a recurring job,
-or an outbound CRM write), that is a **QUESTIONS gap**, not something to
+`## Constitution gate` verdict per article). The applicable articles are
+the universal ones + the project section matching the card's execution
+target from A3 (`## Project articles (<target>)`) + any `(all targets)`
+section; a single unnamed `## Project articles` section applies to every
+target. If the card as written cannot satisfy an applicable article (e.g.
+it asks for a full-table scan in a recurring job, or an outbound write to
+a banned external API), that is a **QUESTIONS gap**, not something to
 plan around silently.
 
 Then verify the relevant slice of the **target repo** (from A3 —
