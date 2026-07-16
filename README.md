@@ -90,6 +90,13 @@ kit files in their own repo — they edit HERE (PR to this repo), then pull:
 
 Consumers: `rodnik-ai/rodnik-web` (first).
 
+**Contributing (humans AND agents): `main` is PR-only by convention.** The
+org plan has no enforced branch protection, so this is a standing rule,
+not a technical gate: never push to `main` directly — branch, open a PR
+with a rationale, merge after review (self-merge is acceptable for
+trivial doc fixes; prompt/behavior changes wait for a human or a second
+agent). Direct pushes to `main` are treated as incidents.
+
 ## Adoption (human or agent — ~15 minutes)
 
 1. Copy `kit/` into the target repo as `.claude/` (commands/, prompts/,
