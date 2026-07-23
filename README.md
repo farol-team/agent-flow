@@ -71,6 +71,7 @@ kit/                    → copy into your repo's .claude/
 constitution-template.md → seed for your .claude/constitution.md
 examples/               a real, incident-driven project constitution
 docs/                   deeper docs (adoption guide, design notes)
+tests/                  kit self-checks (static invariants, run in CI)
 ```
 
 ## Requirements
@@ -107,6 +108,14 @@ not a technical gate: never push to `main` directly — branch, open a PR
 with a rationale, merge after review (self-merge is acceptable for
 trivial doc fixes; prompt/behavior changes wait for a human or a second
 agent). Direct pushes to `main` are treated as incidents.
+
+Before opening a PR, run `bash tests/kit-invariants.sh` (needs only
+`bash` + `jq`) — CI runs the same script. It pins the invariants that
+break silently: dangling file references, placeholders a prompt body
+uses but doesn't declare, verdict-contract keys drifting between a
+prompt and the meta code that parses it, invalid JSON artifacts, and
+prompt size budgets (raising a budget is allowed, but it's a conscious
+diff in the test file, not silent growth).
 
 ## Adoption (human or agent — ~15 minutes)
 

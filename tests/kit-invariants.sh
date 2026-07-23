@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+# kit-invariants.sh — free, static self-checks for the kit (tier 1).
+#
+# The kit's prompts and commands are the product; this script treats them
+# as build artifacts and pins the invariants that break silently: dangling
+# file references, undeclared placeholders, unparseable JSON, drift between
+# a verdict contract and the meta code that parses it, and unbounded prompt
+# growth. No network, no LLM calls, no repo mutations — safe on every PR.
+#
+# Behavioral (tier 2) checks — spawning a real `claude -p` on a smoke card —
+# are intentionally NOT here; they cost money and belong behind an opt-in
+# flag when they land.
+#
+# Usage: bash tests/kit-invariants.sh   (exit 0 = all invariants hold)
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+FAIL=0
+CHECKS=0
+
+pass() { CHECKS=$((CHECKS + 1)); }
+fail() {
+  CHECKS=$((CHECKS + 1)); FAIL=$((FAIL + 1))
+  echo "FAIL: $1" >&2
+}
+
+command -v jq >/dev/null 2>&1 || { echo "FAIL: jq is required (it is already a kit requirement)" >&2; exit 1; }
+
+# ── 1. Shell scripts: syntax + executable bit ─────────────────────────────
+
+for f in kit/hooks/*.sh scripts/workflow-kit-sync; do
+  [ -f "$f" ] || continue
+  if bash -n "$f" 2>/dev/null; then pass; else fail "$f: bash syntax error (bash -n)"; fi
+  if [ -x "$f" ]; then pass; else fail "$f: not executable (chmod +x, adoption step depends on it)"; fi
+done
+
+# ── 2. JSON artifacts parse ───────────────────────────────────────────────
+
+for f in kit/hooks/worker-settings.json docs/trello.example.json; do
+  if jq empty "$f" 2>/dev/null; then pass; else fail "$f: invalid JSON"; fi
+done
+
+# ── 3. Config contract: keys the commands read exist in the example ───────
+# trello-run/trello-check read these top-level keys; a consumer copying the
+# example must get every one of them. Extend this list when a command grows
+# a new config dependency.
+
+REQUIRED_CONFIG_KEYS="board lists auto_merge_criteria research worker acceptance tdd_gate card_prefix branch_prefix default_target targets session_log learnings comment_prefixes"
+for key in $REQUIRED_CONFIG_KEYS; do
+  if jq -e --arg k "$key" 'has($k)' docs/trello.example.json >/dev/null 2>&1; then
+    pass
+  else
+    fail "docs/trello.example.json: missing top-level key '$key' (a kit command reads it)"
+  fi
+done
+
+# ── 4. File references resolve ────────────────────────────────────────────
+# Any `.claude/{prompts,commands,hooks}/<file>` mentioned anywhere in the kit
+# or README must exist in kit/ — a renamed prompt with a stale reference is
+# exactly the failure mode meta cannot detect at runtime.
+# Whitelist: ui-design.md is documented as optional and project-owned.
+
+REF_WHITELIST="prompts/ui-design.md"
+
+REFS=$(grep -rhoE '\.claude/(prompts|commands|hooks)/[A-Za-z0-9._/-]+\.(md|sh|json|txt)' kit README.md 2>/dev/null | sort -u)
+for ref in $REFS; do
+  rel="${ref#.claude/}"
+  case " $REF_WHITELIST " in *" $rel "*) pass; continue ;; esac
+  if [ -f "kit/$rel" ]; then pass; else fail "dangling reference: $ref (no kit/$rel)"; fi
+done
+
+# ── 5. Placeholder discipline in prompt bodies ────────────────────────────
+# Meta substitutes a fixed vocabulary of placeholders. If a prompt BODY uses
+# one of them, the file's header MUST declare it in its Placeholders section —
+# an undeclared one reaches the model as literal "<learnings>" text.
+# One-directional by design: declared-but-unused is legal (e.g. <branch>
+# declared for context), used-but-undeclared is the bug.
+
+KNOWN_PLACEHOLDERS="card-url pr_url worktree-path branch base PLAN-comment prior-findings learnings iter MAX_ITER gaps-list critic-findings"
+
+for f in kit/prompts/*.md; do
+  grep -q '^Placeholders' "$f" || continue   # roles/ and non-template files
+  header=$(sed -n '1,/^---$/p' "$f")
+  body=$(sed -n '/^---$/,$p' "$f")
+  for ph in $KNOWN_PLACEHOLDERS; do
+    if printf '%s' "$body" | grep -q "<$ph>"; then
+      if printf '%s' "$header" | grep -q "<$ph>"; then
+        pass
+      else
+        fail "$f: body uses <$ph> but the Placeholders section does not declare it"
+      fi
+    fi
+  done
+done
+
+# ── 6. Verdict-contract parity ────────────────────────────────────────────
+# trello-run parses these keys out of subagent verdicts; the prompt that
+# produces the verdict must mention every one, and vice versa is pinned by
+# the contract lines themselves. Catches one side of the contract moving.
+
+for key in gaps gaps_summary minor verdicts learnings; do
+  if grep -q "\"$key\"" kit/prompts/acceptance-check.md; then pass; else
+    fail "acceptance-check.md: verdict key \"$key\" (parsed by trello-run) missing from the output contract"
+  fi
+done
+for key in verdict findings summary learnings; do
+  if grep -q "\"$key\"" kit/prompts/test-critic.md; then pass; else
+    fail "test-critic.md: verdict key \"$key\" (parsed by trello-run) missing from the output contract"
+  fi
+done
+
+# The orchestrator must reference every key it is documented to parse.
+for key in gaps gaps_summary minor verdicts learnings; do
+  if grep -q "\`$key" kit/commands/trello-run.md || grep -q "\"$key\"" kit/commands/trello-run.md || grep -qE "(^|[^a-z_])${key}\[?\]?" kit/commands/trello-run.md; then
+    pass
+  else
+    fail "trello-run.md: never mentions verdict key '$key' it is supposed to parse"
+  fi
+done
+
+# ── 7. Prompt size budgets ────────────────────────────────────────────────
+# Every line of every prompt is context spent on every card. Ceilings are
+# ~30% above current size — raising one is allowed, but must be a conscious
+# diff in this file, not silent growth.
+
+check_budget() { # file max
+  local n
+  n=$(wc -l < "$1" | tr -d ' ')
+  if [ "$n" -le "$2" ]; then pass; else fail "$1: $n lines exceeds budget $2 (raise the budget consciously or trim)"; fi
+}
+
+check_budget kit/commands/trello-run.md        1100
+check_budget kit/commands/trello-check.md       300
+check_budget kit/commands/trello-questions.md   300
+check_budget kit/commands/trello-normalize.md   150
+check_budget kit/prompts/acceptance-check.md    470
+check_budget kit/prompts/card-eval.md           430
+check_budget kit/prompts/plan-format.md         320
+check_budget kit/prompts/test-critic.md         130
+check_budget kit/prompts/worker-iter1.md        150
+check_budget kit/prompts/worker-iterN.md        140
+check_budget kit/prompts/worker-specs.md        110
+check_budget kit/prompts/worker-impl.md          60
+check_budget kit/prompts/worker-research.md     130
+
+# ── 8. Hook JSON output shape ─────────────────────────────────────────────
+# scope-guard blocks via exit 2 + stderr; any JSON it emits on stdout must
+# parse (Claude Code consumes it). Extract single-line JSON echoes and check.
+
+for f in kit/hooks/*.sh; do
+  jsons=$(grep -oE "echo '\{[^']*\}'" "$f" | sed -e "s/^echo '//" -e "s/'$//")
+  [ -z "$jsons" ] && continue
+  while IFS= read -r j; do
+    if printf '%s' "$j" | jq empty 2>/dev/null; then pass; else fail "$f: emits invalid JSON: $j"; fi
+  done <<< "$jsons"
+done
+
+# ── Summary ───────────────────────────────────────────────────────────────
+
+echo ""
+echo "kit-invariants: $((CHECKS - FAIL))/$CHECKS checks passed"
+[ "$FAIL" -eq 0 ] || { echo "kit-invariants: $FAIL FAILED" >&2; exit 1; }

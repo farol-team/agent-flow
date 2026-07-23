@@ -1,0 +1,14 @@
+name: kit checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  invariants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Kit static invariants (tier 1 — free)
+        run: bash tests/kit-invariants.sh
