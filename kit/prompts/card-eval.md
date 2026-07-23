@@ -103,6 +103,15 @@ the `default_target` unless a `repo:` label points elsewhere):
 - If the task touches the frontend AND the project provides an optional
   UI guide at `.claude/prompts/ui-design.md` — read it BEFORE writing the
   PLAN and cite it in the PLAN's `## Approach`.
+- Read the project learnings file (`trello.json` `learnings`, default
+  `.gilb/learnings.jsonl`; skip silently if missing). Filter to entries
+  whose `files[]` overlap the card's likely scope or whose `key` matches
+  the card's topic. Let matching `pitfall` entries inform `## Tests` /
+  `## Out of scope` and the Risk metric; let `pattern`/`architecture`
+  entries inform `## Approach` — and cite applied keys there
+  (`per learning <key>: …`). A high-confidence pitfall the card would
+  re-trigger is a legitimate reason to lower Confidence or raise a
+  QUESTIONS gap.
 
 Stop when you've verified:
 - Files you'll reference in the plan exist (or are explicitly new).
