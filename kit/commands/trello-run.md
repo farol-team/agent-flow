@@ -365,6 +365,8 @@ In-memory state for this card:
 - `cost_usd` = 0.0      // accumulated over worker + acceptance runs
 - `agent_runs` = 0
 - `iter_log` = []  // list of dicts: {iter, outcome, gaps_count, gaps_summary, log_path}
+- `finding_history` = {}  // fingerprint → {first_iter, last_iter, times_in_gaps, status: open|fixed|ledgered}
+- `prev_gap_fps` = []  // gap fingerprints of the PREVIOUS iteration (for the no-progress check)
 
 ### Step 2.1a — TDD gate (spec-first, conditional)
 
@@ -492,7 +494,14 @@ Build the acceptance prompt by concatenating, in order:
 2. `.claude/prompts/roles/formatting.md`
 3. `.claude/prompts/acceptance-check.md` with placeholders substituted:
    `<card-url>`, `<pr_url>`, `<worktree-path>`, `<branch>`, `<base>`,
-   `<PLAN-comment>`.
+   `<PLAN-comment>`, `<prior-findings>`.
+
+`<prior-findings>` renders `finding_history` — the literal string `none`
+when it is empty (always on iteration 1), else one line per fingerprint:
+
+```
+<fingerprint> — <status> (first seen iter <first_iter>, in gaps <times_in_gaps>×)
+```
 
 Spawn (note the audit role is enforced by tooling, not just prompt —
 edit tools are disallowed, and an acceptance-specific cheaper model
@@ -531,7 +540,23 @@ its `result` text:
 The `gaps[]` and `gaps_summary` fed into Step 2.4 below come from the
 parsed JSON.
 
+**Fingerprint extraction.** For each `gaps[]` / `minor[]` entry, the
+fingerprint is the first `[...]` group in the string (after the severity
+prefix for gaps). Entries with no parseable fingerprint are tolerated —
+they count as gaps/minors normally but do not participate in history
+tracking or the no-progress check (fail-open on format drift).
+
 ### Step 2.4 — Decide outcome of this iteration
+
+First update `finding_history` from the parsed verdict:
+
+- every fingerprint in `gaps[]` → status `open`, `times_in_gaps += 1`,
+  `last_iter = iter` (create with `first_iter = iter` when new);
+- every fingerprint in `minor[]` → status `ledgered` (create when new;
+  do not overwrite an `open` entry — a gap wrongly re-filed as minor
+  stays `open`);
+- every fingerprint previously `open` that appears in NEITHER array →
+  status `fixed`.
 
 **`gaps == []`** → acceptance passed.
 - Append iter_log: `{iter, outcome: "accepted", gaps_count: 0, gaps_summary: "—", log_path}`.
@@ -552,14 +577,30 @@ parsed JSON.
 - **break** out of loop. Proceed to Phase 3.
 
 **`gaps != []` and `iter < MAX_ITER`**:
+
+**No-progress escalation (check before retrying).** If `iter >= 2`, all
+current `gaps[]` entries carry fingerprints, and the current gap
+fingerprint set is IDENTICAL to `prev_gap_fps` (nothing fixed, nothing
+new), the worker is not converging — a third pass over the same
+instructions will not help. Do not retry: treat this as the
+`iter == MAX_ITER` branch below (Blocked path), with the comment header
+`[meta] BLOCKED — no progress between iterations ✗` and an extra line
+`Identical gap set across iter <iter-1> and iter <iter>: <fingerprints>`.
+If any entry lacks a fingerprint, skip this check (fail-open) and retry
+normally.
+
+Otherwise:
+- Set `prev_gap_fps` = current gap fingerprints.
 - Append iter_log: `{iter, outcome: "needs_fix", gaps_count: <N>, gaps_summary, log_path}`.
-- Comment in card (full audit so user need not open PR):
+- Comment in card (full audit so user need not open PR). For any gap
+  whose fingerprint has `times_in_gaps >= 2`, append
+  ` (REPEAT — unresolved since iter <first_iter>)`:
   ```
   [meta] Iteration <iter>: <N> gap(s), retrying
 
   **Acceptance gaps:**
   1. <gap 1 — file/line/command>
-  2. <gap 2>
+  2. <gap 2> (REPEAT — unresolved since iter <first_iter>)
   ...
 
   **Worker log:** <result-json>

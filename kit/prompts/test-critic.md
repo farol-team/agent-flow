@@ -54,6 +54,17 @@ relevant (Article P1: a spec proving cross-tenant isolation when the
 card touches tenant data). New-job specs assert the queue (Article P3)
 when the plan declares one.
 
+## Evidence rule (applies to every finding)
+
+Every finding must name the spec file and quote the assertion (or the
+verbatim lines of the run output) that motivates it — evidence you
+produced in THIS run. A stub-passable claim (check 3) must walk the
+quoted assertion against the stub: "with `return nil`, `expect(result)
+.to be_nil` still passes". A concern you cannot anchor to a quoted line
+is a nit: prefix it `NIT:` in `findings`. Rejection without quoted
+evidence is noise with a deadline — the worker burns a whole revision
+chasing it.
+
 # Output contract
 
 Final response — exactly one line of JSON:
@@ -62,8 +73,10 @@ Final response — exactly one line of JSON:
 {"verdict":"approved|rejected","findings":["<finding 1>","<finding 2>",...],"summary":"<one line>"}
 ```
 
-- `rejected` when ANY finding means the specs cannot serve as the card's
-  definition of done (unmapped criterion, fake red, stub-passable spec).
+- `rejected` when ANY anchored (non-`NIT:`) finding means the specs
+  cannot serve as the card's definition of done (unmapped criterion,
+  fake red, stub-passable spec). `NIT:` findings never justify
+  `rejected` on their own.
 - `approved` allows nit-level findings in `findings` (worker sees them
   in phase B but is not forced to address them).
 - Could not run at all → `BLOCKED: <reason>` instead of JSON.
