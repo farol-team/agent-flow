@@ -8,7 +8,10 @@
 #
 # Usage: bin/workflow-kit-sync            # sync from main
 #        KIT_REF=<branch|sha> bin/workflow-kit-sync
-# Requires: gh (authenticated), git, rsync.
+# Requires: gh (authenticated), git, rsync, jq.
+#
+# Exit codes: 0 = synced; 2 = synced, but .claude/trello.json is missing
+# required keys (fix before committing).
 set -euo pipefail
 
 KIT_REPO="${KIT_REPO:-rodnik-ai/agent-workflow}"
@@ -30,3 +33,24 @@ printf '%s %s %s\n' "$KIT_REPO" "$KIT_REF" "$REV" > "$ROOT/.claude/KIT_REVISION"
 echo "Kit synced from $KIT_REPO@$KIT_REF ($REV)."
 echo "Changes (empty = already in sync):"
 git -C "$ROOT" status --short -- .claude/ || true
+
+# Config contract: the kit commands read a fixed set of top-level keys from
+# .claude/trello.json. A kit update can grow that set; syncing prompts
+# without the new keys leaves commands reading defaults the consumer never
+# reviewed. Fail loudly (exit 2) — the file sync above has already happened.
+CONTRACT="$TMP/kit/kit/config-contract.txt"
+CONF="$ROOT/.claude/trello.json"
+if [ -f "$CONTRACT" ] && [ -f "$CONF" ] && command -v jq >/dev/null 2>&1; then
+  MISSING=""
+  while IFS= read -r key; do
+    case "$key" in ''|\#*) continue ;; esac
+    jq -e --arg k "$key" 'has($k)' "$CONF" >/dev/null 2>&1 || MISSING="$MISSING $key"
+  done < "$CONTRACT"
+  if [ -n "$MISSING" ]; then
+    echo "" >&2
+    echo "ERROR: .claude/trello.json is missing required top-level keys:$MISSING" >&2
+    echo "Kit commands read them. Add them before committing this sync" >&2
+    echo "(reference values: docs/trello.example.json in $KIT_REPO)." >&2
+    exit 2
+  fi
+fi

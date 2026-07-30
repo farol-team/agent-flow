@@ -48,6 +48,19 @@ Three forms, all run from a Claude Code session in the repo:
   card-ref, but for a single-card invocation it's a no-op (one card =
   at most one worker).
 
+- `/trello-run --resume <card-ref>` — continue a card whose run was
+  interrupted mid-card (meta session died, machine rebooted). Requires
+  BOTH: the card is in `In Progress`, and its state file
+  `<target.worker_log_dir>/<card-short>-state.json` exists (see "State
+  persistence" in Phase 2); otherwise exit with
+  `Nothing to resume for <ref>: <which precondition failed>.`
+  Meta reloads the state, verifies the worktree and branch still exist
+  (either missing → `Blocked` with `[meta] Resume failed: <what>. Manual
+  cleanup.`), then re-enters Phase 2 at the recorded `next_action`:
+  `acceptance` → Step 2.3; `spawn_iter_<N>` → Step 2.1 with `iter = N`;
+  `done` → nothing to resume, exit. `--parallel` is ignored with
+  `--resume`.
+
 Combinations:
 - `/trello-run GILB-3` → exactly that card, sequential by construction.
 - `/trello-run -p2` → all Ready cards, up to 2 in flight.
@@ -90,6 +103,8 @@ Combinations:
    `jq is required by /trello-run. Install it first.`
 
 1. Parse the invocation (see `## Invocation`):
+   - Detect `--resume`. It requires a `<card-ref>` positional; `--resume`
+     without one → exit with `--resume requires a card ref.`
    - Detect `--parallel N` / `-p N` / `--p N` / `--pN` / `-pN`. Clamp to
      `[1, 4]`. Default `N=1`. Reject non-integer / out-of-range with
      `Invalid --parallel value: <raw>. Expected integer in [1, 4].` and
@@ -103,7 +118,8 @@ Combinations:
    `worktree_root`, `worker_log_dir`, `auto_merge_criteria`, `session_log`,
    `card_prefix`, the `research` block (`marker`, `doc_dir`, `target_repo`,
    `route`), the **runtime** config — `worker.{max_turns, model,
-   resume_sessions}` (defaults: `100`, unset, `true`) and
+   resume_sessions, max_cost_usd_per_card}` (defaults: `100`, unset,
+   `true`, `15` — the per-card cost cap in USD, `0` = unlimited) and
    `acceptance.{max_turns, model}` (defaults: `50`, unset; empty-string
    `model` means "CLI default") and `tdd_gate.{enabled, min_size,
    min_risk, max_spec_iterations}` (defaults: `false`, `M`, `medium`, `2`
@@ -119,7 +135,9 @@ Combinations:
    specifically the contents of the `ready` list. From these:
    - **If `<card-ref>` was given:** resolve it (see "Card ref resolution"
      below). If the resolved card isn't in `ready` → exit per the
-     Invocation rules. Targets list = `[that card]`.
+     Invocation rules. Targets list = `[that card]`. (With `--resume` the
+     expected list is `in_progress` instead of `ready`, and the card
+     enters directly at its recorded `next_action` — Phase 1 is skipped.)
    - **Otherwise:** targets list = all cards currently in `ready`. If
      empty → reply "Ready for AI empty" and exit.
 5. Directories are created per resolved target in Phase 1.e
@@ -372,6 +390,19 @@ In-memory state for this card:
 - `finding_history` = {}  // fingerprint → {first_iter, last_iter, times_in_gaps, status: open|fixed|ledgered}
 - `prev_gap_fps` = []  // gap fingerprints of the PREVIOUS iteration (for the no-progress check)
 
+**State persistence (crash recovery).** This state lives in meta's
+context; a dead meta session loses it while the worktree and PR live on.
+So: after every Step 2.2 parse and every Step 2.4 decision, write the
+whole card state as one JSON object to
+`<target.worker_log_dir>/<card-short>-state.json` — all fields above plus
+`card_short`, `branch`, `worktree`, `base`, `pr_url`, and `next_action`
+(`acceptance` once a worker result is parsed but not yet verified;
+`spawn_iter_<N>` after a needs-fix decision; `done` on any terminal
+outcome — accepted, Blocked, max-iter). `/trello-run --resume <card-ref>`
+reloads this file (see Invocation). Writing is best-effort: a failed
+write never changes the iteration outcome — note it once in chat and
+continue.
+
 ### Step 2.1a — TDD gate (spec-first, conditional)
 
 Applies only when ALL hold: `iter == 1`, code card (not research),
@@ -571,6 +602,14 @@ prefix for gaps). Entries with no parseable fingerprint are tolerated —
 they count as gaps/minors normally but do not participate in history
 tracking or the no-progress check (fail-open on format drift).
 
+Because every fail-open here silently disables the anti-loop machinery,
+count it: `fps_parsed` / `fps_total` over this verdict's `gaps[]` +
+`minor[]`. The counter is surfaced as a `Fingerprints: <parsed>/<total>`
+line in the Step 2.4 iteration comments — when parsed < total, that line
+is the only signal a human gets that history tracking is partially blind
+(a persistent gap between the two numbers means the acceptance prompt's
+output contract has drifted and needs fixing).
+
 **Learnings harvest.** If the parsed verdict has a `learnings` array
 (acceptance: max 2; test critic: max 1 — truncate excess), validate each
 entry: all of `type`/`key`/`insight`/`confidence`/`files` present,
@@ -625,6 +664,13 @@ instructions will not help. Do not retry: treat this as the
 If any entry lacks a fingerprint, skip this check (fail-open) and retry
 normally.
 
+**Cost cap (check before retrying).** If `worker.max_cost_usd_per_card`
+is > 0 and `cost_usd` ≥ the cap, do not retry: treat as the
+`iter == MAX_ITER` branch below (Blocked path) with the comment header
+`[meta] BLOCKED — cost cap reached ($<cost_usd> ≥ $<cap>) ✗` and the
+remaining-gaps list. A card that has already burned the budget without
+converging needs a human, not another paid pass.
+
 Otherwise:
 - Set `prev_gap_fps` = current gap fingerprints.
 - Append iter_log: `{iter, outcome: "needs_fix", gaps_count: <N>, gaps_summary, log_path}`.
@@ -633,6 +679,7 @@ Otherwise:
   ` (REPEAT — unresolved since iter <first_iter>)`:
   ```
   [meta] Iteration <iter>: <N> gap(s), retrying
+  Fingerprints: <fps_parsed>/<fps_total>
 
   **Acceptance gaps:**
   1. <gap 1 — file/line/command>
@@ -659,6 +706,7 @@ Otherwise:
 - Move card to `Blocked`. Comment (full history):
   ```
   [meta] BLOCKED after <MAX_ITER> iterations ✗
+  Fingerprints: <fps_parsed>/<fps_total>
 
   **Iteration history:**
   - iter 1: <iter_log[0].outcome> — <gaps_count>: <gaps_summary>
@@ -852,3 +900,7 @@ broader multi-board vision (several Trello boards → repos) remains GILB-31.
 | `--parallel N` with `N` outside `[1, 4]` or non-integer | Exit with `Invalid --parallel value: <raw>. Expected integer in [1, 4].` |
 | `--parallel N` set but only one card in targets | Treat as `N=1`; no warning needed. |
 | Parallel run, one card hits `Blocked` | Other in-flight cards continue. Pending queue continues to drain. |
+| `--resume` but card not in `In Progress`, or no state file | Exit with `Nothing to resume for <ref>: <why>.` No state change. |
+| `--resume` and worktree/branch from the state file are gone | Blocked: `Resume failed`. Manual cleanup; do not recreate silently. |
+| State-file write fails (disk, permissions) | Continue the iteration normally; note once in chat. Resume just won't be available for this card. |
+| `cost_usd` ≥ `worker.max_cost_usd_per_card` before a retry | Blocked: cost-cap path in Step 2.4. Human decides whether to keep paying. |

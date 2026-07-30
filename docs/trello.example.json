@@ -41,7 +41,8 @@
   "worker": {
     "max_turns": 100,
     "model": "",
-    "resume_sessions": true
+    "resume_sessions": true,
+    "max_cost_usd_per_card": 15
   },
   "acceptance": {
     "max_turns": 50,
