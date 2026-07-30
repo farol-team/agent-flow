@@ -37,7 +37,8 @@ handles the gaps that genuinely need the human.
 
 - `.claude/trello.json` — board, list IDs (`human_questions`, `backlog`).
 - `.claude/prompts/card-eval.md` — question categories + auto-answer policy.
-- `trello-workflow.md` — full workflow.
+- `trello-workflow.md` — optional project-owned workflow doc (absent
+  by default).
 - `.gilb/session-log.md` — recent automation history.
 
 ## Algorithm

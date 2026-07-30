@@ -93,7 +93,9 @@ tests/                  kit self-checks (static invariants, run in CI)
 - Claude Code CLI (`claude`) with an API plan that allows spawning
   headless workers (`claude -p`).
 - A Trello MCP server configured in the adopting project (the kit calls
-  `mcp__trello__*` tools) with API key/token for your board.
+  `mcp__trello__*` tools) with API key/token for your board — e.g.
+  [`@delorenj/mcp-server-trello`](https://github.com/delorenj/mcp-server-trello),
+  the implementation the original project runs.
 - `gh` (authenticated), `git`, `jq`.
 - A Trello board with these lists: Icebox, Backlog, Triage in progress,
   Human Questions, Plan Proposed, Ready for AI, In Progress, Review,
@@ -136,8 +138,9 @@ kit files in their own repo — they edit HERE (PR to this repo), then pull:
 2. Run `bin/workflow-kit-sync` to pull the latest kit. It overwrites
    `.claude/{commands,prompts,hooks,bin}` (deletions propagate), never touches
    project-owned files (`trello.json`, `constitution.md`,
-   `project-context.md`, `settings.local.json`, optional
-   `prompts/ui-design.md`), and records the kit SHA in
+   `project-context.md`, `settings.local.json`, the committed
+   `learnings.jsonl` memory, optional `prompts/ui-design.md`), and
+   records the kit SHA in
    `.claude/KIT_REVISION`.
 3. Review the diff, commit.
 
@@ -217,11 +220,11 @@ the worker/critic/acceptance chain always runs on Claude Code.
 
 ## Known origins
 
-The kit was extracted from a live project (card prefix RDK, earlier GILB);
-a few prose examples in prompts still reference those names, and the
-default state directory is `.gilb/` (configurable per target in
-`trello.json`) — they are historical, not functional. Update them if they
-bother you; they have no effect on behavior.
+The kit was extracted from a live project (card prefix RDK, earlier
+GILB). The example constitution's filename and the default state
+directory `.gilb/` (configurable per target in `trello.json`) still
+carry the original names — historical, not functional; they have no
+effect on behavior.
 
 ## Contributing
 

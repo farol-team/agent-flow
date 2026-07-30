@@ -4,6 +4,7 @@
 # Kit-owned (overwritten, deletions propagate): .claude/{commands,prompts,hooks,bin}
 # Project-owned (never touched): .claude/trello.json, .claude/constitution.md,
 #   .claude/project-context.md, .claude/settings.local.json,
+#   .claude/learnings.jsonl (committed project memory),
 #   .claude/prompts/ui-design.md (optional per-project UI guide).
 #
 # Usage: bin/workflow-kit-sync            # sync from main

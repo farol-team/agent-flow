@@ -71,7 +71,7 @@ true process boundaries (external HTTP APIs, paid services, clock).
 Every query, index, uniqueness constraint, and background job is scoped by
 `company_id`. No cross-tenant reads or writes, ever — including analytics,
 digests, and agent-facing APIs (RLS enforces this at the DB layer for the
-brain query API; application code must match). New tables carry
+agent query API; application code must match). New tables carry
 `company_id` + `belongs_to :company` from the first migration.
 
 ### Article P2 — Incremental Work Only
@@ -87,12 +87,11 @@ meeting pipeline shares. New heavy jobs go to `low` (or a dedicated
 queue), never `default`-alongside-`pipeline`. When adding a job, state its
 queue explicitly in the PLAN.
 
-### Article P4 — Zero amoCRM Writes
-Nothing is written to amoCRM. Internal linking uses
-`update_columns(amocrm_lead_id:)` so `crm_link` stays nil and
-`SyncMeetingToCrmJob` never fires. Any change that could trigger an
-outbound CRM write is `violates` and needs explicit human sign-off on the
-card.
+### Article P4 — Zero CRM Writes
+Nothing is written to the external CRM. Internal linking sets the foreign
+key directly (`update_columns`) so the link attribute stays nil and the
+sync-to-CRM job never fires. Any change that could trigger an outbound
+CRM write is `violates` and needs explicit human sign-off on the card.
 
 ### Article P5 — Schema Dumps Are Triplets
 *(Rationale: `meetings.call_class` was silently clobbered in tests.)* A
@@ -106,8 +105,8 @@ in only one.
 
 ## Project articles (tauri)
 
-*(Execution target `tauri` — the desktop recorder app, ../rodnik-app,
-Rust/Tauri.)*
+*(Execution target `tauri` — the desktop recorder app, a sibling
+Rust/Tauri repo.)*
 
 ### Article T1 — Recording Is Sacred
 The audio/capture path never blocks and never panics: no synchronous IO,

@@ -30,7 +30,7 @@ When this procedure starts:
 A card is a **research card** if its title contains the
 `research.marker` from `.claude/trello.json` (default `[research]`,
 case-insensitive), independent of the `[<card_prefix>-N]` prefix —
-e.g. `[GILB-32] [research] AI agent workflow in Gilb web`.
+e.g. `[ACME-32] [research] Competitor pricing pages — extraction approach`.
 
 Research cards produce **knowledge, not code**: the deliverable is a
 markdown report under `research.doc_dir` (default `research/`) in
