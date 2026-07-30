@@ -70,7 +70,7 @@ chasing it.
 Final response — exactly one line of JSON:
 
 ```
-{"verdict":"approved|rejected","findings":["<finding 1>","<finding 2>",...],"summary":"<one line>"}
+{"verdict":"approved|rejected","findings":["<finding 1>","<finding 2>",...],"summary":"<one line>","learnings":[{"type":"pitfall","key":"<kebab>","insight":"<one sentence>","confidence":8,"files":["<repo-relative>"]}]}
 ```
 
 - `rejected` when ANY anchored (non-`NIT:`) finding means the specs
@@ -79,6 +79,13 @@ Final response — exactly one line of JSON:
   `rejected` on their own.
 - `approved` allows nit-level findings in `findings` (worker sees them
   in phase B but is not forced to address them).
+- `learnings` — OPTIONAL (omit when none; most runs have none). At most
+  1 entry: a genuine, non-obvious spec-level discovery about THIS
+  project (a factory/fixture trap, a test-harness quirk, a pattern that
+  makes specs stub-passable here). Same fields as the acceptance
+  contract: `type`, `key` (stable kebab-case), `insight` (one
+  sentence), `confidence` (honest 1–10), `files` (≥1 repo-relative
+  anchor). Not a place to restate this card's findings.
 - Could not run at all → `BLOCKED: <reason>` instead of JSON.
 
 Do NOT post to Trello or the PR; meta relays your findings. Do NOT

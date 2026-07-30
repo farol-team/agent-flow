@@ -10,6 +10,8 @@ Placeholders (replaced by meta before spawn):
 - `<branch>` — git branch name (`trello/<card-short>-<slug>`)
 - `<base>` — base branch the PR targets (`main` unless the PLAN sets `Base:`)
 - `<PLAN-comment>` — the full `[meta] PLAN` comment text, as-is
+- `<learnings>` — meta-selected prior learnings relevant to this card's
+  files (`none` when there are none)
 
 ---
 
@@ -24,6 +26,16 @@ take the sanctioned path it suggests instead of working around it.
 # Plan
 
 <PLAN-comment>
+
+# Prior learnings (project memory)
+
+<learnings>
+
+These are confirmed discoveries from earlier cards touching the same
+files — read them before writing code; they exist so you don't rediscover
+the same pitfall. They do NOT extend the plan: if a learning implies work
+outside `## Files` / `## Scope`, finish with `BLOCKED: plan conflicts
+with learning <key>` rather than improvising.
 
 # What you must do
 

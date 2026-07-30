@@ -53,6 +53,12 @@ Key properties:
   iterations: repeats are marked, ledgered minors aren't re-litigated,
   and two identical gap sets in a row block the card early instead of
   burning the last iteration.
+- **Project memory compounds**: acceptance and the test critic surface
+  non-obvious, file-anchored discoveries into `.gilb/learnings.jsonl`
+  (meta is the single writer — dedup by key, staleness via anchored
+  files); triage reads them when drafting PLANs and workers get the
+  relevant ones injected before touching code, so the same pitfall
+  isn't rediscovered on card 30.
 
 ## Repository layout
 
@@ -115,7 +121,9 @@ agent). Direct pushes to `main` are treated as incidents.
    `targets` (repo_root + toolchain + test_cmd/lint_cmd per repo),
    `default_target`, `tdd_gate` thresholds, `auto_merge_criteria`.
 4. Create the session log file (default `.gilb/session-log.md`, path is
-   configurable in trello.json).
+   configurable in trello.json). The learnings file (default
+   `.gilb/learnings.jsonl`, key `learnings`) is created lazily by meta on
+   first harvest — nothing to do here.
 5. Write `.claude/project-context.md`: stack, language conventions,
    commit format — workers read it before touching code.
 6. Smoke-test: put one small card in Backlog → run `/trello-check` →

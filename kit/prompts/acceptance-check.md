@@ -237,7 +237,7 @@ CLI's `--output-format json` envelope — must be exactly one line: a
 single-line JSON object with these keys and nothing else:
 
 ```
-{"gaps":["<SEV [<fingerprint>]: gap 1>",...],"gaps_summary":"<short>; <short>; ...","minor":["[<fingerprint>] <minor 1>",...],"verdicts":{"spec":"pass|fail","quality":"approved|rejected"}}
+{"gaps":["<SEV [<fingerprint>]: gap 1>",...],"gaps_summary":"<short>; <short>; ...","minor":["[<fingerprint>] <minor 1>",...],"verdicts":{"spec":"pass|fail","quality":"approved|rejected"},"learnings":[{"type":"pitfall","key":"<kebab>","insight":"<one sentence>","confidence":8,"files":["<repo-relative>"]}]}
 ```
 
 - `gaps` — critical + important findings only, each formatted
@@ -255,6 +255,19 @@ single-line JSON object with these keys and nothing else:
   `pass`.
 - `verdicts.quality` — `rejected` if any check 8 finding is in `gaps`,
   else `approved`.
+- `learnings` — OPTIONAL (omit the key entirely when you have none;
+  most runs have none). At most 2 entries. A learning is a genuine,
+  non-obvious discovery about THIS project that would change how a
+  future card in the same area is planned or verified — a pitfall you
+  confirmed in the code, a project pattern the plan missed, a toolchain
+  quirk. NOT: things the plan/constitution already say, generic best
+  practices, or this card's own gaps (those are already in `gaps`).
+  Fields: `type` ∈ `pitfall|pattern|architecture|tool|operational`;
+  `key` — stable kebab-case id; `insight` — one sentence, concrete;
+  `confidence` 1–10 (honest: verified-in-code 8–9, inference 4–5);
+  `files` — the repo-relative files the insight is anchored to (enables
+  staleness detection; at least one). Meta appends them to the project
+  learnings file and feeds relevant ones to future workers and triage.
 
 Empty `gaps` is the "pass" signal. If you could not run the checks at
 all (e.g., worktree missing, `git` failed before you started), finish

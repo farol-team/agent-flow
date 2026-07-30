@@ -7,7 +7,8 @@ medium). Meta concatenates with `roles/engineering.md` +
 (`test-critic.md`); implementation continues in the SAME session via
 `--resume` with the phase-B prompt (see `trello-run.md` Step 2.1a).
 
-Placeholders: `<card-url>`, `<branch>`, `<base>`, `<PLAN-comment>`.
+Placeholders: `<card-url>`, `<branch>`, `<base>`, `<PLAN-comment>`,
+`<learnings>`.
 
 ---
 
@@ -24,6 +25,15 @@ edit, or delete them.
 # Plan
 
 <PLAN-comment>
+
+# Prior learnings (project memory)
+
+<learnings>
+
+Confirmed discoveries from earlier cards touching the same files —
+factory traps and harness quirks listed here are exactly what makes
+specs fail for the WRONG reason. Read before writing specs; they do not
+extend the plan.
 
 # What you must do
 

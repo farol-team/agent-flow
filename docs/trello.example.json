@@ -71,6 +71,7 @@
   },
   "project_context_docs": ["README.md"],
   "session_log": ".gilb/session-log.md",
+  "learnings": ".gilb/learnings.jsonl",
   "comment_prefixes": {
     "meta": "[meta] ",
     "worker": "[worker] "
