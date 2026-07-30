@@ -40,9 +40,21 @@ git -C "$ROOT" status --short -- .claude/ || true
 # reviewed. Fail loudly (exit 2) — the file sync above has already happened.
 CONTRACT="$TMP/kit/kit/config-contract.txt"
 CONF="$ROOT/.claude/trello.json"
-if [ -f "$CONTRACT" ] && [ -f "$CONF" ] && command -v jq >/dev/null 2>&1; then
+if ! command -v jq >/dev/null 2>&1; then
+  echo "WARNING: jq not found — skipping the trello.json contract check (jq is a kit requirement)." >&2
+elif [ ! -f "$CONTRACT" ]; then
+  echo "note: kit has no config-contract.txt at $KIT_REF — contract check skipped." >&2
+elif [ ! -f "$CONF" ]; then
+  echo "WARNING: no .claude/trello.json yet — create it from docs/trello.example.json (adoption step 3)." >&2
+elif ! jq empty "$CONF" >/dev/null 2>&1; then
+  echo "ERROR: .claude/trello.json is not valid JSON — fix it, then re-run the contract check." >&2
+  exit 2
+else
   MISSING=""
-  while IFS= read -r key; do
+  while IFS= read -r raw; do
+    # Normalize: strip surrounding whitespace, then skip blanks/comments —
+    # a cosmetically-valid contract edit must not break consumer syncs.
+    key="$(printf '%s' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
     case "$key" in ''|\#*) continue ;; esac
     jq -e --arg k "$key" 'has($k)' "$CONF" >/dev/null 2>&1 || MISSING="$MISSING $key"
   done < "$CONTRACT"

@@ -16,6 +16,7 @@ card_prefix
 branch_prefix
 default_target
 targets
+repo_label_prefix
 session_log
 learnings
 comment_prefixes
