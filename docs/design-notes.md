@@ -89,7 +89,7 @@ end-to-end. Intentionally not in CI-per-PR.
 
 ## Orchestrator-as-prompt, state-as-journal
 
-**Problem.** `/trello-run` is a ~900-line procedure executed by an LLM;
+**Problem.** `/trello-run` is a ~950-line procedure executed by an LLM;
 its per-card state (`finding_history`, `iter_log`, costs) originally
 lived only in the meta session's context, so a dead session stranded an
 In-Progress card with a live worktree and PR but no recoverable state.
