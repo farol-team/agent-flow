@@ -47,7 +47,8 @@ Key properties:
   git worktree; a PreToolUse hook rejects edits outside the plan's file
   manifest and another blocks history rewrites / self-merge. These
   hooks catch a well-meaning worker drifting off-plan — they are NOT a
-  security boundary (`bash -c` bypasses them); the acceptance check
+  security boundary (a plain Bash file write never hits the scope hook,
+  and light obfuscation slips the git regexes); the acceptance check
   re-enforces scope post-hoc. See "Threat model" below.
 - **Verdicts require evidence**: no "should pass" anywhere in the chain —
   fresh command output or it didn't happen. Acceptance findings must
@@ -75,7 +76,7 @@ kit/                    → copy into your repo's .claude/
                         the tested mechanical halves of /trello-run
 constitution-template.md → seed for your .claude/constitution.md
 examples/               a real, incident-driven project constitution
-docs/                   design notes + the reference trello.json
+docs/                   design-notes.md + trello.example.json
 tests/                  kit self-checks (static invariants, run in CI)
 ```
 
@@ -105,10 +106,13 @@ What the kit defends against, and what it deliberately does not:
   **The Trello board is a trusted input** — restrict board membership to
   people you'd give a shell.
 - **NOT defended: a malicious worker.** `git-guard`/`scope-guard` are
-  regex/manifest checks on tool calls; `bash -c 'git push --force'`
-  walks past them. Treat them as guardrails, not containment. If you
-  need containment, run `/trello-run` itself inside a VM/container with
-  a repo-scoped token.
+  regex/manifest checks on tool-call arguments, and real bypasses are
+  trivial (verified): `scope-guard` matches only the edit tools, so a
+  Bash `echo hacked > file` writes anywhere unchecked; `git-guard`
+  greps the raw command string, so quote-splitting the flag
+  (`git push --for''ce`) walks past it. Treat the hooks as guardrails,
+  not containment. If you need containment, run `/trello-run` itself
+  inside a VM/container with a repo-scoped token.
 - **Blast radius**: a worker holds whatever credentials the worktree
   environment exposes (`gh` token, env vars). Scope the token to the
   target repos; never export unrelated secrets into the meta session

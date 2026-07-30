@@ -89,23 +89,26 @@ end-to-end. Intentionally not in CI-per-PR.
 
 ## Orchestrator-as-prompt, state-as-journal
 
-**Problem.** `/trello-run` is an 854-line procedure executed by an LLM;
+**Problem.** `/trello-run` is a ~900-line procedure executed by an LLM;
 its per-card state (`finding_history`, `iter_log`, costs) originally
 lived only in the meta session's context, so a dead session stranded an
 In-Progress card with a live worktree and PR but no recoverable state.
 
 **Mechanism.** Meta journals the full card state to
-`<worker_log_dir>/<card>-state.json` after every parse/decide step, with
-an explicit `next_action`; `/trello-run --resume <card>` re-enters the
-loop there. Journal writes are best-effort and never change an
-iteration outcome.
+`<worker_log_dir>/<card-short>-state.json` at every phase boundary,
+with an explicit `next_action` covering the whole loop (initial spawn,
+TDD-gate phases, acceptance, merge decision, done);
+`/trello-run --resume <card>` re-enters there. Journal writes are
+atomic (tmp + mv) and best-effort — they never change an iteration
+outcome.
 
-**Direction.** The longer-term fix is extracting the mechanical parts
-of the orchestrator (spawn, envelope parsing, learnings dedup, manifest
-generation) into small tested scripts, leaving the model only the
-judgment calls. The prompt shrinks, tier-1 tests gain real coverage,
-and the journal becomes a script concern instead of a prompt
-instruction.
+**Direction — first slice shipped.** The mechanical parts of the
+orchestrator are moving into small tested scripts (`kit/bin/`), leaving
+the model only the judgment calls: `parse-verdict` (tolerant verdict
+extraction + fingerprints out of the CLI envelope),
+`harvest-learnings`, `render-learnings` — each behavior-pinned by
+`tests/kit-bin.test.sh`. Still in the prompt: spawning, manifest
+generation, the journal itself.
 
 ## Two human gates, everything else agents
 
