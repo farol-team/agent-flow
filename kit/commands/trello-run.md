@@ -100,11 +100,15 @@ Combinations:
 - `.claude/prompts/worker-iter1.md`, `worker-iterN.md` — worker prompt templates.
 - `.claude/prompts/acceptance-check.md` — verification procedure.
 - `.claude/prompts/plan-format.md` — PLAN parsing contract.
+- `.claude/bin/` — the mechanical halves meta MUST call instead of
+  improvising: `parse-verdict` (verdict extraction + fingerprints),
+  `harvest-learnings`, `render-learnings`. Unit-tested in the kit repo
+  (`tests/kit-bin.test.sh`).
 - `trello-workflow.md` — full workflow doc.
 - `CLAUDE.md` — commit style (worker reads it).
 - `.gilb/session-log.md` — recent automation history.
 - Project learnings file — `trello.json` `learnings` (default
-  `.gilb/learnings.jsonl`): one JSON object per line,
+  `.claude/learnings.jsonl`): one JSON object per line,
   `{date, card, type, key, insight, confidence, files}`. Meta appends
   (single writer); subagents contribute via their verdicts.
 
@@ -115,6 +119,12 @@ Combinations:
 0. Verify `jq` is available (`command -v jq`) — it parses the worker
    result envelopes and powers the guardrail hooks. Missing → stop with
    `jq is required by /trello-run. Install it first.`
+   Verify the kit bin scripts exist and are executable
+   (`.claude/bin/parse-verdict`, `harvest-learnings`,
+   `render-learnings`). Missing → stop with
+   `Kit bin scripts missing: <path>. Re-run bin/workflow-kit-sync.`
+   Do not inline a fallback — hand-parsing verdicts is exactly the
+   failure mode these scripts pin down.
 
 1. Parse the invocation (see `## Invocation`):
    - Detect `--resume`. It requires a `<card-ref>` positional; `--resume`
@@ -452,9 +462,12 @@ carries inline test-first discipline for ungated cards).
 2. **Spawn test critic** — same mechanics as the acceptance check
    (Step 2.3: versatile+formatting roles, edit tools disallowed, fresh
    session, `acceptance.model` if set) with body
-   `.claude/prompts/test-critic.md`. Parse its one-line JSON
-   `{"verdict","findings","summary"}` and harvest its optional
-   `learnings` (max 1) per the Learnings harvest rule in Step 2.3.
+   `.claude/prompts/test-critic.md`. Extract its verdict with
+   `.claude/bin/parse-verdict critic <result-json>` (exit 0 →
+   `{verdict, findings, summary, learnings}` + `_`-meta; exit 3 →
+   `BLOCKED` path; exit 4 → untrustworthy, Blocked) and pipe the
+   output through `harvest-learnings` (max 1) per the Learnings
+   harvest rule in Step 2.3.
 3. **verdict == "rejected"** → respawn phase A ONCE via
    `--resume <session_id>` with a short body: the critic's `findings`
    list + "revise the specs, same rules, finish with SPECS_READY".
@@ -496,23 +509,21 @@ iteration-specific template body, in this order:
      `<PLAN-comment>`, `<gaps-list>` (from previous iteration's
      audit comment).
 
-**Rendering `<learnings>`** (also used by phase A in Step 2.1a): read
-the learnings file (path above; missing/empty file → the literal string
-`none`). Select entries where at least one path in `files[]` matches an
-entry in the PLAN's `## Files` (exact path or same directory), or whose
-`key` matches a significant word of the card title. Drop stale entries —
-every path in `files[]` gone from the repo (`git ls-files`) — and note
-dropped keys in your working output (they are candidates for pruning,
-not silently forgotten). Cap at the 5 highest-confidence entries,
-rendered one per line:
-
+**Rendering `<learnings>`** (also used by phase A in Step 2.1a): write
+the PLAN's `## Files` paths (tails stripped) to a temp file, then run,
+from the TARGET REPO ROOT:
+```bash
+.claude/bin/render-learnings <learnings-file> <plan-files-tmp> "<card title>"
 ```
-[<type> <confidence>/10] <key>: <insight> (files: <files>)
-```
-
-`none` when nothing survives selection. This is a cheap grep-class
-filter, not semantic search — a false positive costs the worker one
-read; a false negative costs nothing that wasn't already lost.
+Its stdout IS the substitution value: up to the 5 highest-confidence
+relevant entries (`[<type> <confidence>/10] <key>: <insight> (files: …)`
+one per line), or the literal `none`. Selection: file/directory overlap
+with the plan, or a key word matching the card title — a cheap
+grep-class filter, not semantic search (a false positive costs the
+worker one read; a false negative costs nothing that wasn't already
+lost). Stale entries — every anchored file gone from `git ls-files` —
+are dropped and reported as `stale: <key>` on stderr; relay those into
+your working output (pruning candidates, not silently forgotten).
 
 The role files are appended verbatim (no placeholder substitution);
 only the body has placeholders. If any role file is missing → stop
@@ -609,50 +620,54 @@ CLI_EXIT=$?
 Add `--model <acceptance.model>` when non-empty. Acceptance never
 resumes a session — an independent verdict requires a fresh context.
 
-Parse the JSON envelope (same fields as Step 2.2; add
-`total_cost_usd` to `cost_usd`, increment `agent_runs`), then classify
-its `result` text:
-- `result` is exactly one JSON line matching
-  `{"gaps":[...],"gaps_summary":"...","minor":[...],"verdicts":{...}}`:
-  extract `gaps[]`, `gaps_summary`, `minor[]` (default `[]` when the key
-  is absent), `verdicts` (default both-pass when absent — tolerant of the
-  legacy two-key shape). Empty `gaps` means acceptance passes; `minor`
-  never blocks.
-- `result` is `BLOCKED: <reason>`: the acceptance subagent could not
-  run the checks. Move card to `Blocked` with
+Then extract the verdict mechanically — do NOT parse `result` yourself:
+```bash
+.claude/bin/parse-verdict acceptance <acceptance-result-json>
+PV_EXIT=$?
+```
+- **exit 0** — stdout is the normalized verdict: `gaps[]`,
+  `gaps_summary`, `minor[]`, `verdicts`, `learnings` (contract defaults
+  already filled — tolerant of the legacy two-key shape and of prose
+  around the JSON line), plus `_fingerprints.{gaps,minor}` (entry-wise,
+  `null` where unparseable), `_fps.{parsed,total}`, `_session_id`,
+  `_cost_usd` (add to `cost_usd`), `_num_turns`. Empty `gaps` means
+  acceptance passes; `minor` never blocks.
+- **exit 3** — the subagent said `BLOCKED:`; stdout carries the reason.
+  Move card to `Blocked` with
   `[meta] Acceptance subagent failed (iter <iter>): <reason>. Log: <acceptance-result-json>`.
   Skip Phase 3, go to Phase 4 (Blocked path).
-- Any other (`CLI_EXIT != 0`, `is_error`, non-JSON `result`, multi-line
-  `result`): the verdict is untrustworthy — Blocked, comment with the
-  log path, skip Phase 3.
+- **exit 4, any other nonzero exit, or `CLI_EXIT != 0`** — the verdict
+  is untrustworthy (envelope error, no verdict-shaped line, script
+  failure). Blocked, comment with the log path and the script's stderr,
+  skip Phase 3.
 
-The `gaps[]` and `gaps_summary` fed into Step 2.4 below come from the
-parsed JSON.
+The `gaps[]` / `gaps_summary` fed into Step 2.4 below come from this
+output.
 
-**Fingerprint extraction.** For each `gaps[]` / `minor[]` entry, the
-fingerprint is the first `[...]` group in the string (after the severity
-prefix for gaps). Entries with no parseable fingerprint are tolerated —
-they count as gaps/minors normally but do not participate in history
-tracking or the no-progress check (fail-open on format drift).
+**Fingerprints** come from `_fingerprints` (first `[...]` group per
+entry, after the severity prefix — computed by the script). Entries with
+`null` fingerprints are tolerated: they count as gaps/minors normally
+but do not participate in history tracking or the no-progress check
+(fail-open on format drift). Because every fail-open here silently
+disables the anti-loop machinery, `_fps.parsed`/`_fps.total` is surfaced
+as a `Fingerprints: <parsed>/<total>` line in the Step 2.4 iteration
+comments — when parsed < total, that line is the only signal a human
+gets that history tracking is partially blind (a persistent gap between
+the two numbers means the acceptance prompt's output contract has
+drifted and needs fixing).
 
-Because every fail-open here silently disables the anti-loop machinery,
-count it: `fps_parsed` / `fps_total` over this verdict's `gaps[]` +
-`minor[]`. The counter is surfaced as a `Fingerprints: <parsed>/<total>`
-line in the Step 2.4 iteration comments — when parsed < total, that line
-is the only signal a human gets that history tracking is partially blind
-(a persistent gap between the two numbers means the acceptance prompt's
-output contract has drifted and needs fixing).
-
-**Learnings harvest.** If the parsed verdict has a `learnings` array
-(acceptance: max 2; test critic: max 1 — truncate excess), validate each
-entry: all of `type`/`key`/`insight`/`confidence`/`files` present,
-`type` in the allowed set, `files` non-empty. Drop invalid entries
-silently. For each valid entry, add `date` (ISO, today) and `card`
-(`<card-short>`), then append to the learnings file — EXCEPT when an
-entry with the same `key` already exists: replace the existing line only
-if the new `confidence` is strictly higher, otherwise skip (dedup keeps
-the file from silting up with restatements). Harvest is best-effort:
-any failure here never changes the iteration outcome.
+**Learnings harvest.** Pipe the normalized verdict through the harvest
+script (meta stays the single writer by being the only caller):
+```bash
+printf '%s' "<normalized-verdict-json>" \
+  | .claude/bin/harvest-learnings <learnings-file> <card-short> <max>
+```
+`<max>` = 2 for acceptance, 1 for the test critic. The script enforces
+the contract (required fields, allowed types, non-empty `files`; adds
+`date` + `card`; dedup by `key` — replace only on strictly higher
+confidence) and is best-effort by construction: it exits 0 even when it
+writes nothing, and any failure never changes the iteration outcome.
+Relay its stdout (`harvested <key> …` lines) into your working output.
 
 ### Step 2.4 — Decide outcome of this iteration
 
@@ -924,6 +939,7 @@ broader multi-board vision (several Trello boards → repos) remains GILB-31.
 | Worker prompt template file (`worker-iter1.md`, `worker-iterN.md`) missing | Stop. Don't inline a fallback. |
 | Role prompt file missing (`roles/engineering.md` or `roles/formatting.md` for worker; `roles/versatile.md` or `roles/formatting.md` for acceptance) | Stop with `Role prompt file missing: <path>`. Don't inline a fallback. |
 | `acceptance-check.md` missing | Stop. Don't skip acceptance. |
+| `.claude/bin/` script missing or not executable | Stop at bootstrap: `Re-run bin/workflow-kit-sync.` Don't hand-parse verdicts as a fallback. |
 | `<card-ref>` not in `Ready for AI` | Exit early per Invocation rules; no state change. |
 | `<card-ref>` resolves to no card on the board | Exit with `Card <ref> not found on board.` |
 | `--parallel N` with `N` outside `[1, 4]` or non-integer | Exit with `Invalid --parallel value: <raw>. Expected integer in [1, 4].` |

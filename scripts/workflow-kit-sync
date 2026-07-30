@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sync the agent-workflow kit into the current repo's .claude/.
 #
-# Kit-owned (overwritten, deletions propagate): .claude/{commands,prompts,hooks}
+# Kit-owned (overwritten, deletions propagate): .claude/{commands,prompts,hooks,bin}
 # Project-owned (never touched): .claude/trello.json, .claude/constitution.md,
 #   .claude/project-context.md, .claude/settings.local.json,
 #   .claude/prompts/ui-design.md (optional per-project UI guide).
@@ -28,6 +28,14 @@ rsync -a --delete "$TMP/kit/kit/commands/" "$ROOT/.claude/commands/"
 rsync -a --delete --exclude ui-design.md "$TMP/kit/kit/prompts/" "$ROOT/.claude/prompts/"
 rsync -a --delete "$TMP/kit/kit/hooks/" "$ROOT/.claude/hooks/"
 chmod +x "$ROOT/.claude/hooks/"*.sh
+if [ -d "$TMP/kit/kit/bin" ]; then
+  rsync -a --delete "$TMP/kit/kit/bin/" "$ROOT/.claude/bin/"
+  find "$ROOT/.claude/bin" -type f -exec chmod +x {} +
+fi
+
+if [ -f "$ROOT/.gilb/learnings.jsonl" ]; then
+  echo "note: found .gilb/learnings.jsonl — the kit default moved to .claude/learnings.jsonl (committed, so project memory travels with the repo). Move the file and update the 'learnings' key in trello.json." >&2
+fi
 
 printf '%s %s %s\n' "$KIT_REPO" "$KIT_REF" "$REV" > "$ROOT/.claude/KIT_REVISION"
 

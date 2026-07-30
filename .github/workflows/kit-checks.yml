@@ -12,3 +12,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Kit static invariants (tier 1 — free)
         run: bash tests/kit-invariants.sh
+      - name: Kit bin unit tests (tier 1.5 — free)
+        run: bash tests/kit-bin.test.sh
