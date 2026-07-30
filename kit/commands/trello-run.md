@@ -118,8 +118,7 @@ Combinations:
    `worktree_root`, `worker_log_dir`, `auto_merge_criteria`, `session_log`,
    `card_prefix`, the `research` block (`marker`, `doc_dir`, `target_repo`,
    `route`), the **runtime** config — `worker.{max_turns, model,
-   resume_sessions, max_cost_usd_per_card}` (defaults: `100`, unset,
-   `true`, `15` — the per-card cost cap in USD, `0` = unlimited) and
+   resume_sessions}` (defaults: `100`, unset, `true`) and
    `acceptance.{max_turns, model}` (defaults: `50`, unset; empty-string
    `model` means "CLI default") and `tdd_gate.{enabled, min_size,
    min_risk, max_spec_iterations}` (defaults: `false`, `M`, `medium`, `2`
@@ -664,13 +663,6 @@ instructions will not help. Do not retry: treat this as the
 If any entry lacks a fingerprint, skip this check (fail-open) and retry
 normally.
 
-**Cost cap (check before retrying).** If `worker.max_cost_usd_per_card`
-is > 0 and `cost_usd` ≥ the cap, do not retry: treat as the
-`iter == MAX_ITER` branch below (Blocked path) with the comment header
-`[meta] BLOCKED — cost cap reached ($<cost_usd> ≥ $<cap>) ✗` and the
-remaining-gaps list. A card that has already burned the budget without
-converging needs a human, not another paid pass.
-
 Otherwise:
 - Set `prev_gap_fps` = current gap fingerprints.
 - Append iter_log: `{iter, outcome: "needs_fix", gaps_count: <N>, gaps_summary, log_path}`.
@@ -903,4 +895,3 @@ broader multi-board vision (several Trello boards → repos) remains GILB-31.
 | `--resume` but card not in `In Progress`, or no state file | Exit with `Nothing to resume for <ref>: <why>.` No state change. |
 | `--resume` and worktree/branch from the state file are gone | Blocked: `Resume failed`. Manual cleanup; do not recreate silently. |
 | State-file write fails (disk, permissions) | Continue the iteration normally; note once in chat. Resume just won't be available for this card. |
-| `cost_usd` ≥ `worker.max_cost_usd_per_card` before a retry | Blocked: cost-cap path in Step 2.4. Human decides whether to keep paying. |

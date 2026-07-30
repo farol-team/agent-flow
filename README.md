@@ -162,9 +162,6 @@ the worker/critic/acceptance chain always runs on Claude Code.
   `strategy`. Research cards never auto-merge.
 - `worker.model` / `acceptance.model`: per-stage model override (e.g. a
   cheaper model for acceptance).
-- `worker.max_cost_usd_per_card` (default 15, `0` = unlimited): hard
-  per-card spend cap — a card that exhausts it between iterations goes to
-  `Blocked` instead of buying another pass.
 - `--parallel N` on `/trello-run`: up to 4 cards in flight.
 - `/trello-run --resume <card>`: continue a card whose meta session died
   mid-run — per-card state is journaled to
