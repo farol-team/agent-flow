@@ -54,7 +54,7 @@ Key properties:
   and two identical gap sets in a row block the card early instead of
   burning the last iteration.
 - **Project memory compounds**: acceptance and the test critic surface
-  non-obvious, file-anchored discoveries into `.gilb/learnings.jsonl`
+  non-obvious, file-anchored discoveries into `.claude/learnings.jsonl`
   (meta is the single writer — dedup by key, staleness via anchored
   files); triage reads them when drafting PLANs and workers get the
   relevant ones injected before touching code, so the same pitfall
@@ -68,6 +68,8 @@ kit/                    → copy into your repo's .claude/
   prompts/              plan format, card triage, worker bodies (iter1/specs/impl/iterN),
                         test-critic, acceptance-check, roles/
   hooks/                scope-guard.sh, git-guard.sh, worker-settings.json
+  bin/                  parse-verdict, harvest-learnings, render-learnings —
+                        the tested mechanical halves of /trello-run
 constitution-template.md → seed for your .claude/constitution.md
 examples/               a real, incident-driven project constitution
 docs/                   deeper docs (adoption guide, design notes)
@@ -93,7 +95,7 @@ kit files in their own repo — they edit HERE (PR to this repo), then pull:
 1. Copy `scripts/workflow-kit-sync` into your repo (e.g. `bin/`) once,
    during adoption.
 2. Run `bin/workflow-kit-sync` to pull the latest kit. It overwrites
-   `.claude/{commands,prompts,hooks}` (deletions propagate), never touches
+   `.claude/{commands,prompts,hooks,bin}` (deletions propagate), never touches
    project-owned files (`trello.json`, `constitution.md`,
    `project-context.md`, `settings.local.json`, optional
    `prompts/ui-design.md`), and records the kit SHA in
@@ -120,8 +122,9 @@ diff in the test file, not silent growth).
 ## Adoption (human or agent — ~15 minutes)
 
 1. Copy `kit/` into the target repo as `.claude/` (commands/, prompts/,
-   hooks/ — keep paths) and `scripts/workflow-kit-sync` as
-   `bin/workflow-kit-sync`. `chmod +x .claude/hooks/*.sh bin/workflow-kit-sync`.
+   hooks/, bin/ — keep paths) and `scripts/workflow-kit-sync` as
+   `bin/workflow-kit-sync`.
+   `chmod +x .claude/hooks/*.sh .claude/bin/* bin/workflow-kit-sync`.
 2. Create `.claude/constitution.md` from `constitution-template.md`. Keep
    the universal articles; write 3–7 PROJECT articles — each earned by a
    real incident/constraint (see `examples/`).
@@ -131,7 +134,7 @@ diff in the test file, not silent growth).
    `default_target`, `tdd_gate` thresholds, `auto_merge_criteria`.
 4. Create the session log file (default `.gilb/session-log.md`, path is
    configurable in trello.json). The learnings file (default
-   `.gilb/learnings.jsonl`, key `learnings`) is created lazily by meta on
+   `.claude/learnings.jsonl`, key `learnings`) is created lazily by meta on
    first harvest — nothing to do here.
 5. Write `.claude/project-context.md`: stack, language conventions,
    commit format — workers read it before touching code.
@@ -167,6 +170,9 @@ the worker/critic/acceptance chain always runs on Claude Code.
   mid-run — per-card state is journaled to
   `<worker_log_dir>/<card-short>-state.json` at every phase boundary
   (worker spawn, parse, verdict, merge decision).
+- `/trello-clean`: the sanctioned worktree cleanup — lists finished-card
+  worktrees (card Done + PR merged/closed + clean tree) and removes only
+  what the human confirms. `/trello-run` itself never deletes worktrees.
 
 ## Known origins
 

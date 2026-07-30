@@ -104,7 +104,7 @@ the `default_target` unless a `repo:` label points elsewhere):
   UI guide at `.claude/prompts/ui-design.md` — read it BEFORE writing the
   PLAN and cite it in the PLAN's `## Approach`.
 - Read the project learnings file (`trello.json` `learnings`, default
-  `.gilb/learnings.jsonl`; skip silently if missing). Filter to entries
+  `.claude/learnings.jsonl`; skip silently if missing). Filter to entries
   whose `files[]` overlap the card's likely scope or whose `key` matches
   the card's topic. Let matching `pitfall` entries inform `## Tests` /
   `## Out of scope` and the Risk metric; let `pattern`/`architecture`

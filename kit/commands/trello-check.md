@@ -31,7 +31,7 @@ lives in `.claude/prompts/card-eval.md`. The PLAN format lives in
 - `trello-workflow.md` — full workflow doc.
 - `.gilb/session-log.md` — recent automation history.
 - Project learnings file — `trello.json` `learnings` (default
-  `.gilb/learnings.jsonl`); card-eval.md step B reads it per card.
+  `.claude/learnings.jsonl`); card-eval.md step B reads it per card.
 - `CLAUDE.md`, `spec.md`, `tauri-plan.md`, `research/*.md` — project context.
 
 ## Algorithm

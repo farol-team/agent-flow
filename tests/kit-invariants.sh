@@ -30,7 +30,7 @@ command -v jq >/dev/null 2>&1 || { echo "FAIL: jq is required (it is already a k
 
 # ── 1. Shell scripts: syntax + executable bit ─────────────────────────────
 
-for f in kit/hooks/*.sh scripts/workflow-kit-sync; do
+for f in kit/hooks/*.sh kit/bin/* scripts/workflow-kit-sync; do
   [ -f "$f" ] || continue
   if bash -n "$f" 2>/dev/null; then pass; else fail "$f: bash syntax error (bash -n)"; fi
   if [ -x "$f" ]; then pass; else fail "$f: not executable (chmod +x, adoption step depends on it)"; fi
@@ -138,6 +138,7 @@ check_budget kit/commands/trello-run.md        1100
 check_budget kit/commands/trello-check.md       300
 check_budget kit/commands/trello-questions.md   300
 check_budget kit/commands/trello-normalize.md   150
+check_budget kit/commands/trello-clean.md       110
 check_budget kit/prompts/acceptance-check.md    470
 check_budget kit/prompts/card-eval.md           430
 check_budget kit/prompts/plan-format.md         320
