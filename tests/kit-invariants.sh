@@ -74,6 +74,17 @@ for ref in $REFS; do
   if [ -f "kit/$rel" ]; then pass; else fail "dangling reference: $ref (no kit/$rel)"; fi
 done
 
+# ── 4b. Kit bin references resolve ────────────────────────────────────────
+# trello-run hard-requires `.claude/bin/<name>` at bootstrap (like role
+# files); the scripts are extensionless so check 4's regex can't see them.
+# A renamed script would pass every other check and stop every consumer.
+
+BINREFS=$(grep -rhoE '\.claude/bin/[a-z0-9-]+' kit README.md 2>/dev/null | sort -u)
+for ref in $BINREFS; do
+  rel="${ref#.claude/bin/}"
+  if [ -f "kit/bin/$rel" ]; then pass; else fail "dangling bin reference: $ref (no kit/bin/$rel)"; fi
+done
+
 # ── 5. Placeholder discipline in prompt bodies ────────────────────────────
 # Meta substitutes a fixed vocabulary of placeholders. If a prompt BODY uses
 # one of them, the file's header MUST declare it in its Placeholders section —

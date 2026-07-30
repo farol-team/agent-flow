@@ -636,9 +636,10 @@ PV_EXIT=$?
   Move card to `Blocked` with
   `[meta] Acceptance subagent failed (iter <iter>): <reason>. Log: <acceptance-result-json>`.
   Skip Phase 3, go to Phase 4 (Blocked path).
-- **exit 4** (or `CLI_EXIT != 0`) — the verdict is untrustworthy
-  (envelope error, no verdict-shaped line). Blocked, comment with the
-  log path and the script's stderr, skip Phase 3.
+- **exit 4, any other nonzero exit, or `CLI_EXIT != 0`** — the verdict
+  is untrustworthy (envelope error, no verdict-shaped line, script
+  failure). Blocked, comment with the log path and the script's stderr,
+  skip Phase 3.
 
 The `gaps[]` / `gaps_summary` fed into Step 2.4 below come from this
 output.

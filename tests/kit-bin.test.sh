@@ -76,6 +76,45 @@ ENV="$(mk_envelope "$WORK/r5")"
 "$BIN/parse-verdict" acceptance "$ENV" >/dev/null 2>&1; RC=$?
 expect_exit "acceptance no-json: exit" "$RC" 4
 
+# 5a. Fingerprint alignment: unfingerprinted STRING entry yields null in
+# place (regression: jq capture on a non-matching string emits an empty
+# stream, which silently dropped the entry and misaligned the arrays).
+cat > "$WORK/r5a" <<'EOF'
+{"gaps":["IMPORTANT: unfingerprinted first","CRITICAL [c1:a:b]: second"],"gaps_summary":"x","minor":[]}
+EOF
+ENV="$(mk_envelope "$WORK/r5a")"
+OUT="$("$BIN/parse-verdict" acceptance "$ENV")"
+expect_eq "fps align: length matches gaps" "$(printf '%s' "$OUT" | jq '._fingerprints.gaps | length')" "2"
+expect_eq "fps align: first is null" "$(printf '%s' "$OUT" | jq '._fingerprints.gaps[0]')" "null"
+expect_eq "fps align: second attributed correctly" "$(printf '%s' "$OUT" | jq -r '._fingerprints.gaps[1]')" "c1:a:b"
+
+# 5b. Type garbage → exit 4 crash path (not exit 5, not exit 0).
+printf '{"gaps":"whoops-not-array","gaps_summary":"x"}\n' > "$WORK/r5b"
+ENV="$(mk_envelope "$WORK/r5b")"
+"$BIN/parse-verdict" acceptance "$ENV" >/dev/null 2>&1; RC=$?
+expect_exit "acceptance gaps-not-array: exit" "$RC" 4
+printf '{"gaps":[{"not":"a string"}],"gaps_summary":"x"}\n' > "$WORK/r5c"
+ENV="$(mk_envelope "$WORK/r5c")"
+"$BIN/parse-verdict" acceptance "$ENV" >/dev/null 2>&1; RC=$?
+expect_exit "acceptance non-string gap entry: exit" "$RC" 4
+
+# 5d. Last-verdict-wins is a PINNED trade-off: an echoed example after the
+# real verdict wins (the prompts' one-line-final-response rule is the guard).
+cat > "$WORK/r5d" <<'EOF'
+{"gaps":["CRITICAL [c1:a:b]: real gap"],"gaps_summary":"real","minor":[]}
+{"gaps":[],"gaps_summary":"","minor":[]}
+EOF
+ENV="$(mk_envelope "$WORK/r5d")"
+OUT="$("$BIN/parse-verdict" acceptance "$ENV")"
+expect_eq "last-verdict-wins pinned" "$(printf '%s' "$OUT" | jq '.gaps | length')" "0"
+
+# 5e. Multi-line BLOCKED: reason is the first line only.
+printf 'BLOCKED: could not run checks\n{"gaps":[],"gaps_summary":"","minor":[]}\n' > "$WORK/r5e"
+ENV="$(mk_envelope "$WORK/r5e")"
+OUT="$("$BIN/parse-verdict" acceptance "$ENV")"; RC=$?
+expect_exit "blocked multiline: exit" "$RC" 3
+expect_eq "blocked multiline: first line only" "$(printf '%s' "$OUT" | jq -r '.blocked')" "could not run checks"
+
 # ── parse-verdict: critic ─────────────────────────────────────────────────
 
 cat > "$WORK/r6" <<'EOF'
@@ -86,6 +125,12 @@ OUT="$("$BIN/parse-verdict" critic "$ENV")"; RC=$?
 expect_exit "critic: exit" "$RC" 0
 expect_eq "critic: verdict" "$(printf '%s' "$OUT" | jq -r '.verdict')" "rejected"
 expect_eq "critic: learnings kept" "$(printf '%s' "$OUT" | jq '.learnings | length')" "1"
+
+# 6c. Critic type garbage → exit 4, never a value that reads as approved.
+printf '{"verdict":7,"findings":"oops"}\n' > "$WORK/r6c"
+ENV="$(mk_envelope "$WORK/r6c")"
+"$BIN/parse-verdict" critic "$ENV" >/dev/null 2>&1; RC=$?
+expect_exit "critic garbage types: exit" "$RC" 4
 
 # ── harvest-learnings ─────────────────────────────────────────────────────
 
@@ -116,6 +161,22 @@ expect_eq "harvest: still one line per key" "$(wc -l < "$LF" | tr -d ' ')" "1"
 echo '{"learnings":[{"type":"vibe","key":"bad-type","insight":"x","confidence":5,"files":["a.rb"]}]}' \
   | "$BIN/harvest-learnings" "$LF" C 2 >/dev/null
 expect_eq "harvest: bad type dropped" "$(grep -c bad-type "$LF" || true)" "0"
+
+# 8b. Corrupt line in the file: preserved untouched; replace still
+# deduplicates the valid line (committed file → merge-conflict debris is real).
+LFC="$WORK/corrupt.jsonl"
+printf '{"date":"2026-07-01","card":"A","type":"pitfall","key":"good-key","insight":"old","confidence":5,"files":["a.rb"]}\nNOT JSON AT ALL\n' > "$LFC"
+echo '{"learnings":[{"type":"pitfall","key":"good-key","insight":"new","confidence":9,"files":["a.rb"]}]}' \
+  | "$BIN/harvest-learnings" "$LFC" C 2 >/dev/null
+expect_eq "harvest corrupt: corrupt line preserved" "$(grep -c 'NOT JSON AT ALL' "$LFC")" "1"
+expect_eq "harvest corrupt: exactly one good-key line" "$(grep -c 'good-key' "$LFC")" "1"
+expect_eq "harvest corrupt: replaced confidence" "$(grep 'good-key' "$LFC" | jq -r '.confidence')" "9"
+
+# 8c. Key with JSON-escaped characters still dedups (raw-vs-escaped mismatch).
+LFQ="$WORK/quoted.jsonl"; : > "$LFQ"
+echo '{"learnings":[{"type":"pitfall","key":"a\"b","insight":"x","confidence":5,"files":["a.rb"]}]}' | "$BIN/harvest-learnings" "$LFQ" C 2 >/dev/null
+echo '{"learnings":[{"type":"pitfall","key":"a\"b","insight":"x","confidence":4,"files":["a.rb"]}]}' | "$BIN/harvest-learnings" "$LFQ" C 2 >/dev/null
+expect_eq "harvest quoted key: single line" "$(wc -l < "$LFQ" | tr -d ' ')" "1"
 
 # ── render-learnings ──────────────────────────────────────────────────────
 
@@ -156,6 +217,11 @@ done
 OUT="$(cd "$REPO" && "$BIN/render-learnings" "$LF3" "$WORK/plan-files" "t" 2>/dev/null)"
 expect_eq "render: capped at 5" "$(printf '%s\n' "$OUT" | grep -c '^\[')" "5"
 expect_eq "render: lowest-confidence dropped" "$(printf '%s\n' "$OUT" | grep -c 'entry-1' || true)" "0"
+
+# 11. Outside a git repo staleness fails OPEN — memory survives, not `none`.
+NOREPO="$WORK/norepo"; mkdir -p "$NOREPO"
+OUT="$(cd "$NOREPO" && "$BIN/render-learnings" "$LF2" "$WORK/plan-files" "t" 2>/dev/null)"
+expect_eq "render no-git: staleness skipped, matches survive" "$(printf '%s\n' "$OUT" | grep -c 'queue-choice')" "1"
 
 # ── Summary ───────────────────────────────────────────────────────────────
 

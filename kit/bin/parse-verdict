@@ -40,14 +40,27 @@ RESULT="$(jq -r '.result // empty' "$ENVELOPE")"
 TRIMMED="$(printf '%s' "$RESULT" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
 case "$TRIMMED" in
   BLOCKED:*)
-    REASON="$(printf '%s' "$TRIMMED" | sed 's/^BLOCKED:[[:space:]]*//')"
+    # First line only — a multi-line remainder must not be smeared into
+    # the card comment as "the reason".
+    REASON="$(printf '%s' "$TRIMMED" | head -n1 | sed 's/^BLOCKED:[[:space:]]*//')"
     jq -cn --arg r "$REASON" --argjson meta "$META" '{blocked: $r} + $meta'
     exit 3
     ;;
 esac
 
-if [ "$MODE" = "acceptance" ]; then REQUIRED='has("gaps") and has("gaps_summary")'; else REQUIRED='has("verdict") and has("findings")'; fi
+# Required keys WITH types — has() alone lets a garbage verdict flow
+# downstream ({"verdict":7,"findings":"oops"} must be exit 4, not a value
+# whose == "rejected" check silently reads as approved).
+if [ "$MODE" = "acceptance" ]; then
+  REQUIRED='(.gaps? | type) == "array" and (.gaps_summary? | type) == "string" and ((.minor? // []) | type) == "array" and ((.learnings? // []) | type) == "array" and (.gaps | all(type == "string")) and (.minor // [] | all(type == "string"))'
+else
+  REQUIRED='(.verdict? | type) == "string" and (.findings? | type) == "array"'
+fi
 
+# Last verdict-shaped line wins (the prompts require the FINAL response to
+# be the verdict). Deliberate trade-off, pinned by test: if a model echoes
+# a contract example AFTER its real verdict, the example wins — the
+# one-line-final-response rule in the prompts is what keeps this honest.
 VERDICT=""
 while IFS= read -r line; do
   [ -z "$line" ] && continue
@@ -69,7 +82,10 @@ fi
 # after the optional severity prefix; null when absent — fail-open, the entry
 # still counts as a gap/minor, it just leaves history tracking).
 printf '%s' "$VERDICT" | jq -c --argjson meta "$META" '
-  def fp: try (capture("^(?:[A-Z]+[[:space:]]+)?\\[(?<f>[^\\]]+)\\]") .f) catch null;
+  # capture on a NON-MATCHING string emits an empty stream (not an error),
+  # so wrap in an array and take first — otherwise unfingerprinted entries
+  # are dropped and _fingerprints misaligns against gaps[]/minor[].
+  def fp: [try (capture("^(?:[A-Z]+[[:space:]]+)?\\[(?<f>[^\\]]+)\\]") .f) catch null] | first // null;
   {gaps, gaps_summary,
    minor: (.minor // []),
    verdicts: (.verdicts // {spec: "pass", quality: "approved"}),

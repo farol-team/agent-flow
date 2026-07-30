@@ -23,7 +23,12 @@ command -v jq >/dev/null 2>&1 || { echo "none"; exit 0; }
 [ -s "$FILE" ] || { echo "none"; exit 0; }
 
 TRACKED="$(mktemp)"; trap 'rm -f "$TRACKED"' EXIT
-git ls-files > "$TRACKED" 2>/dev/null || true
+# Staleness fails OPEN: if git ls-files fails (not a repo, wrong cwd) or
+# reports nothing, skip the staleness filter rather than declaring every
+# entry stale and silently eating the whole project memory.
+CHECK_STALE=1
+git ls-files > "$TRACKED" 2>/dev/null || CHECK_STALE=0
+[ -s "$TRACKED" ] || CHECK_STALE=0
 
 TITLE_LC="$(printf '%s' "$TITLE" | tr '[:upper:]' '[:lower:]')"
 
@@ -33,15 +38,17 @@ while IFS= read -r entry; do
   key="$(printf '%s' "$entry" | jq -r '.key // ""')"
 
   # Staleness: every anchored file gone from the repo.
-  alive=0
-  while IFS= read -r f; do
-    [ -n "$f" ] && grep -qxF "$f" "$TRACKED" && { alive=1; break; }
-  done <<EOF2
+  if [ "$CHECK_STALE" -eq 1 ]; then
+    alive=0
+    while IFS= read -r f; do
+      [ -n "$f" ] && grep -qxF "$f" "$TRACKED" && { alive=1; break; }
+    done <<EOF2
 $(printf '%s' "$entry" | jq -r '.files[]')
 EOF2
-  if [ "$alive" -eq 0 ]; then
-    echo "stale: $key" >&2
-    continue
+    if [ "$alive" -eq 0 ]; then
+      echo "stale: $key" >&2
+      continue
+    fi
   fi
 
   match=0
