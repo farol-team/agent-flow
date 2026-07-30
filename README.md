@@ -7,12 +7,20 @@ dragging a card, and an orchestrator executes: isolated git worktree →
 two-verdict acceptance audit → auto-merge or human review. Every step
 leaves an audit trail on the card.
 
-Synthesized from three studied methodologies plus production experience:
+Synthesized from studied methodologies plus production experience:
 [github/spec-kit](https://github.com/github/spec-kit) (constitution,
 clarify-before-plan, WHAT/HOW separation),
 [obra/superpowers](https://github.com/obra/superpowers) (two-stage review,
-evidence-before-claims, TDD iron law), and an adversarial-critics TDD
-process (refute-framed test critic, mutation-resistance checks).
+evidence-before-claims, TDD iron law),
+[garrytan/gstack](https://github.com/garrytan/gstack) (the quote-the-evidence
+verification gate and file-anchored project learnings are adapted from its
+review/learnings mechanics), and an adversarial-critics TDD process
+(refute-framed test critic, mutation-resistance checks).
+
+Extracted from a live project and used in production by its two original
+repos (a Rails web app and a Rust/Tauri desktop app) — every mechanism
+here was earned by a real failure, and `docs/design-notes.md` records
+which one.
 
 ## The flow
 
@@ -133,7 +141,9 @@ kit files in their own repo — they edit HERE (PR to this repo), then pull:
    `.claude/KIT_REVISION`.
 3. Review the diff, commit.
 
-Consumers: `rodnik-ai/rodnik-web` (first).
+First production consumers: two private repos of the original project (a
+Rails web app and a Rust/Tauri desktop app), synced through this exact
+mechanism.
 
 **Contributing (humans AND agents): `main` is PR-only by convention.** The
 org plan has no enforced branch protection, so this is a standing rule,
@@ -173,7 +183,7 @@ diff in the test file, not silent growth).
    review the PLAN it posts → drag to Ready for AI → run `/trello-run` →
    watch the card land in Done/Review with an audit trail.
 
-### Giving this workflow to an agent (e.g. a Hermes cofounder agent)
+### Giving this workflow to an agent (e.g. an autonomous cofounder agent)
 
 Grant the agent read access to this repo and say:
 
@@ -208,6 +218,20 @@ the worker/critic/acceptance chain always runs on Claude Code.
 ## Known origins
 
 The kit was extracted from a live project (card prefix RDK, earlier GILB);
-a few prose examples in prompts still reference those names — they are
-illustrative only. Update them if they bother you; they have no effect on
-behavior.
+a few prose examples in prompts still reference those names, and the
+default state directory is `.gilb/` (configurable per target in
+`trello.json`) — they are historical, not functional. Update them if they
+bother you; they have no effect on behavior.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) — the short version: run both test
+suites before every PR, `main` is PR-only, prompt growth is budgeted, and
+mechanical logic belongs in `kit/bin/` with behavioral pins.
+
+## License
+
+[MIT](LICENSE). The methodologies credited above have their own licenses
+in their own repos; nothing from them is copied verbatim here — the
+mechanisms are re-implementations adapted to this kit's Trello/PLAN
+architecture.

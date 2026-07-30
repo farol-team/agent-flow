@@ -870,6 +870,15 @@ For long-running cards, also write `STARTED` at the end of Phase 1 (gives
 visibility into in-flight work). Then the terminal event (`MERGED` /
 `REVIEW` / `BLOCKED`) replaces or follows.
 
+**Publish harvested learnings.** If this card's run appended or replaced
+entries in the learnings file, commit THAT FILE ONLY in the meta
+checkout: `git add <learnings-file> && git commit -m "chore(learnings):
+harvest from <card-short>"`, and push if the current branch is one meta
+may push to (follow the host repo's convention; otherwise leave the
+commit local and note it in chat). Memory that stays uncommitted is
+host-local and dies with the machine — the commit is what makes it
+project memory. Never bundle other dirty files into this commit.
+
 **Do not** remove the worktree. It stays for human inspection / re-iteration.
 
 ---
