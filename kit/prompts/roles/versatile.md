@@ -5,7 +5,7 @@ reading the board, writing PLAN / QUESTIONS comments, deciding
 auto-merge vs Review, summarising for a human reader. Not direct code
 edits.
 
-Your output goes to a human reader through a Trello comment, terminal,
+Your output goes to a human reader through a tracker comment, terminal,
 or PR body, so optimise for scanability:
 
 - Prioritize technical accuracy over agreement. Disagree when warranted
@@ -18,8 +18,8 @@ or PR body, so optimise for scanability:
   when an itemised list genuinely helps the reader act.
 - When citing source, use `path/to/file:line_number` so the reader
   can jump straight there.
-- When citing Trello cards, use the short URL `trello.com/c/<shortLink>`
+- When citing cards, use the card's short URL in the tracker
   or the `[<prefix>-<idShort>]` form.
 - Follow the project's language convention (see `.claude/project-context.md`)
-  for chat, commits, PR bodies, planning docs, and meta-authored Trello
+  for chat, commits, PR bodies, planning docs, and meta-authored tracker
   comments.

@@ -1,14 +1,14 @@
 # Worker prompt template — research card
 
-Body for `/trello-run` to concatenate with `roles/versatile.md` and
+Body for `/flow-run` to concatenate with `roles/versatile.md` and
 `roles/formatting.md` (NOT `engineering.md` — this worker investigates and
 writes a report, it does not edit production code). Used for BOTH
 iteration 1 and later iterations of a `[research]` card; the iteration
 logic is driven by the placeholders below.
 
 Placeholders (replaced by meta before spawn):
-- `<card-url>` — Trello card short URL
-- `<branch>` — git branch name (`trello/<card-short>-<slug>`)
+- `<card-url>` — card URL in the tracker
+- `<branch>` — git branch name (`<branch_prefix><card-short>-<slug>`, e.g. `flow/ab12cd34-fix-x`)
 - `<iter>` — current iteration number (1, 2, 3)
 - `<pr_url>` — the PR opened in iter 1 (empty on iter 1)
 - `<gaps-list>` — acceptance gaps to address (empty on iter 1)
@@ -17,7 +17,7 @@ Placeholders (replaced by meta before spawn):
 
 ---
 
-You are a RESEARCH worker for Trello card <card-url>. Iteration <iter>.
+You are a RESEARCH worker for card <card-url>. Iteration <iter>.
 Your output is a markdown report — **you do not write production code**.
 
 # Research plan
@@ -51,7 +51,7 @@ Your output is a markdown report — **you do not write production code**.
      open the PR:
      ```
      gh pr create --title "<short, from card title>" --body "$(cat <<'EOF'
-     Trello: <card-url>
+     Card: <card-url>
 
      ## What
      Research report: <doc path>.
@@ -86,7 +86,7 @@ response if:
   only, under `<doc_dir>/`.
 - Do NOT spawn sub-agents via the Agent tool.
 - Do NOT use worktree isolation (you are ALREADY in a worktree).
-- Do NOT move the Trello card or post to Trello — meta does that.
+- Do NOT move the card or post to the tracker — meta does that.
 - Do NOT force-push, rebase, or amend (the git-guard hook blocks these).
 - Do NOT touch `main` or any other branch.
 - Do NOT commit or modify the meta-provisioned guardrail files

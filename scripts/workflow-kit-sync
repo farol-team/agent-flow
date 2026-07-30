@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Sync the agent-workflow kit into the current repo's .claude/.
 #
-# Kit-owned (overwritten, deletions propagate): .claude/{commands,prompts,hooks,bin}
-# Project-owned (never touched): .claude/trello.json, .claude/constitution.md,
+# Kit-owned (overwritten, deletions propagate): .claude/{commands,prompts,hooks,bin,providers}
+# Project-owned (never touched): .claude/tracker.json, .claude/constitution.md,
 #   .claude/project-context.md, .claude/settings.local.json,
 #   .claude/learnings.jsonl (committed project memory),
 #   .claude/prompts/ui-design.md (optional per-project UI guide).
@@ -11,12 +11,12 @@
 #        KIT_REF=<branch|sha> bin/workflow-kit-sync
 # Requires: gh (authenticated), git, rsync, jq.
 #
-# Exit codes: 0 = synced; 2 = synced, but .claude/trello.json failed the
+# Exit codes: 0 = synced; 2 = synced, but .claude/tracker.json failed the
 # contract check (missing required keys, or not valid JSON) — fix before
 # committing.
 set -euo pipefail
 
-KIT_REPO="${KIT_REPO:-rodnik-ai/agent-workflow}"
+KIT_REPO="${KIT_REPO:-farol-team/agent-workflow}"
 KIT_REF="${KIT_REF:-main}"
 ROOT="$(git rev-parse --show-toplevel)"
 TMP="$(mktemp -d)"
@@ -33,9 +33,16 @@ if [ -d "$TMP/kit/kit/bin" ]; then
   rsync -a --delete "$TMP/kit/kit/bin/" "$ROOT/.claude/bin/"
   find "$ROOT/.claude/bin" -type f -exec chmod +x {} +
 fi
+if [ -d "$TMP/kit/kit/providers" ]; then
+  rsync -a --delete "$TMP/kit/kit/providers/" "$ROOT/.claude/providers/"
+fi
+
+if [ -f "$ROOT/.claude/trello.json" ] && [ ! -f "$ROOT/.claude/tracker.json" ]; then
+  echo "note: found .claude/trello.json — the kit config moved to .claude/tracker.json (tracker-agnostic): rename it, wrap the board block as {\"tracker\":{\"provider\":\"trello\",\"board\":{...}}} and rename \"lists\" to \"states\" (see docs/tracker.example.trello.json in $KIT_REPO)." >&2
+fi
 
 if [ -f "$ROOT/.gilb/learnings.jsonl" ]; then
-  echo "note: found .gilb/learnings.jsonl — the kit default moved to .claude/learnings.jsonl (committed, so project memory travels with the repo). Move the file and update the 'learnings' key in trello.json." >&2
+  echo "note: found .gilb/learnings.jsonl — the kit default moved to .claude/learnings.jsonl (committed, so project memory travels with the repo). Move the file and update the 'learnings' key in tracker.json." >&2
 fi
 
 printf '%s %s %s\n' "$KIT_REPO" "$KIT_REF" "$REV" > "$ROOT/.claude/KIT_REVISION"
@@ -45,19 +52,19 @@ echo "Changes (empty = already in sync):"
 git -C "$ROOT" status --short -- .claude/ || true
 
 # Config contract: the kit commands read a fixed set of top-level keys from
-# .claude/trello.json. A kit update can grow that set; syncing prompts
+# .claude/tracker.json. A kit update can grow that set; syncing prompts
 # without the new keys leaves commands reading defaults the consumer never
 # reviewed. Fail loudly (exit 2) — the file sync above has already happened.
 CONTRACT="$TMP/kit/kit/config-contract.txt"
-CONF="$ROOT/.claude/trello.json"
+CONF="$ROOT/.claude/tracker.json"
 if ! command -v jq >/dev/null 2>&1; then
-  echo "WARNING: jq not found — skipping the trello.json contract check (jq is a kit requirement)." >&2
+  echo "WARNING: jq not found — skipping the tracker.json contract check (jq is a kit requirement)." >&2
 elif [ ! -f "$CONTRACT" ]; then
   echo "note: kit has no config-contract.txt at $KIT_REF — contract check skipped." >&2
 elif [ ! -f "$CONF" ]; then
-  echo "WARNING: no .claude/trello.json yet — create it from docs/trello.example.json (adoption step 3)." >&2
+  echo "WARNING: no .claude/tracker.json yet — create it from docs/trello.example.json (adoption step 3)." >&2
 elif ! jq empty "$CONF" >/dev/null 2>&1; then
-  echo "ERROR: .claude/trello.json is not valid JSON — fix it, then re-run the contract check." >&2
+  echo "ERROR: .claude/tracker.json is not valid JSON — fix it, then re-run the contract check." >&2
   exit 2
 else
   MISSING=""
@@ -70,7 +77,7 @@ else
   done < "$CONTRACT"
   if [ -n "$MISSING" ]; then
     echo "" >&2
-    echo "ERROR: .claude/trello.json is missing required top-level keys:$MISSING" >&2
+    echo "ERROR: .claude/tracker.json is missing required top-level keys:$MISSING" >&2
     echo "Kit commands read them. Add them before committing this sync" >&2
     echo "(reference values: docs/trello.example.json in $KIT_REPO)." >&2
     exit 2

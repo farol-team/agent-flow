@@ -1,10 +1,10 @@
 ---
 description: Execute Ready for AI cards via worker iterations; auto-merge or escalate to Review. Accepts an optional single-card ref, --parallel N, and --resume <card-ref> for crash recovery.
 argument-hint: "[card-ref] [--parallel N] [--resume <card-ref>]"
-allowed-tools: Read, Glob, Grep, Edit, Write, Bash, mcp__trello
+allowed-tools: Read, Glob, Grep, Edit, Write, Bash, mcp__trello, mcp__linear
 ---
 
-# /trello-run
+# /flow-run
 
 Role: **execution meta-agent**. Invoked manually after the user has approved
 plans by dragging cards into `Ready for AI`.
@@ -27,28 +27,31 @@ leave it for human `Review`.
 
 Four forms, all run from a Claude Code session in the repo:
 
-- `/trello-run` — process every card currently in `Ready for AI`,
+- `/flow-run` — process every card currently in `Ready for AI`,
   sequentially.
-- `/trello-run <card-ref>` — process exactly one card in `Ready for AI`.
+- `/flow-run <card-ref>` — process exactly one card in `Ready for AI`.
   `<card-ref>` accepts any of:
-  - `shortLink`, e.g. `aBcDeF12`
-  - `<prefix>-<idShort>`, e.g. `ACME-3` (prefix from
-    `.claude/trello.json` `card_prefix`)
-  - full Trello URL, e.g. `https://trello.com/c/aBcDeF12` or
-    `https://trello.com/c/aBcDeF12/3-acme-3-endpoints`
+  - the tracker's native short id (e.g. Trello shortLink `aBcDeF12`,
+    GitHub issue `#42`)
+  - `<prefix>-<N>`, e.g. `ACME-3` (prefix from `.claude/tracker.json`
+    `card_prefix`)
+  - the card's URL in the tracker
+
+  Exact patterns and precedence per provider:
+  `.claude/providers/<provider>.md` → "Ref resolution".
 
   If the resolved card is NOT in `Ready for AI` → reply
   `Card <ref> is not in Ready for AI (currently in <list>). Move it to Ready for AI first.`
   and exit without changes.
 
-- `/trello-run --parallel N` (also accepted: `-p N`, `--p N`, `--pN`,
+- `/flow-run --parallel N` (also accepted: `-p N`, `--p N`, `--pN`,
   `-pN`) — process every Ready-for-AI card with up to **N** workers
   running concurrently. `N` is clamped to `[1, 4]`. Default without the
   flag is `N=1` (sequential). The flag is allowed together with a
   card-ref, but for a single-card invocation it's a no-op (one card =
   at most one worker).
 
-- `/trello-run --resume <card-ref>` — continue a card whose run was
+- `/flow-run --resume <card-ref>` — continue a card whose run was
   interrupted mid-card (meta session died, machine rebooted). Only for a
   DEAD run: if the original meta session may still be alive, do not
   resume — two metas double-drive the card (duplicate paid spawns,
@@ -72,13 +75,13 @@ Four forms, all run from a Claude Code session in the repo:
   `--resume` the journaled `session_id`); `acceptance` → Step 2.3;
   `merge_decision` → Phase 3; `done` → report the last `iter_log`
   outcome (the card reached a terminal decision; if its list disagrees,
-  the final Trello move failed — finish it manually) and exit.
+  the final state move failed — finish it manually) and exit.
   `--parallel` is ignored with `--resume`.
 
 Combinations:
-- `/trello-run ACME-3` → exactly that card, sequential by construction.
-- `/trello-run -p2` → all Ready cards, up to 2 in flight.
-- `/trello-run --parallel 3 ACME-3` → single card; flag ignored with a
+- `/flow-run ACME-3` → exactly that card, sequential by construction.
+- `/flow-run -p2` → all Ready cards, up to 2 in flight.
+- `/flow-run --parallel 3 ACME-3` → single card; flag ignored with a
   warning line.
 
 ## Contract (what you must NOT do)
@@ -95,20 +98,22 @@ Combinations:
 
 ## Sources of truth
 
-- `.claude/trello.json` — board, list IDs, `branch_prefix`, `worktree_root`,
+- `.claude/tracker.json` — board, list IDs, `branch_prefix`, `worktree_root`,
   `worker_log_dir`, `auto_merge_criteria`, `session_log`.
 - `.claude/prompts/worker-iter1.md`, `worker-iterN.md` — worker prompt templates.
 - `.claude/prompts/acceptance-check.md` — verification procedure.
 - `.claude/prompts/plan-format.md` — PLAN parsing contract.
+- `.claude/providers/<tracker.provider>.md` — how THIS tracker performs
+  the semantic ops, resolves refs, and defines `<card-short>`.
 - `.claude/bin/` — the mechanical halves meta MUST call instead of
   improvising: `parse-verdict` (verdict extraction + fingerprints),
   `harvest-learnings`, `render-learnings`. Unit-tested in the kit repo
   (`tests/kit-bin.test.sh`).
-- `trello-workflow.md` — optional project-owned workflow doc; absent
+- `flow-workflow.md` — optional project-owned workflow doc; absent
   by default (this command is self-contained without it).
 - `CLAUDE.md` — commit style (worker reads it).
 - `.gilb/session-log.md` — recent automation history.
-- Project learnings file — `trello.json` `learnings` (default
+- Project learnings file — `tracker.json` `learnings` (default
   `.claude/learnings.jsonl`): one JSON object per line,
   `{date, card, type, key, insight, confidence, files}`. Meta appends
   (single writer); subagents contribute via their verdicts.
@@ -119,7 +124,14 @@ Combinations:
 
 0. Verify `jq` is available (`command -v jq`) — it parses the worker
    result envelopes and powers the guardrail hooks. Missing → stop with
-   `jq is required by /trello-run. Install it first.`
+   `jq is required by /flow-run. Install it first.`
+   Read `tracker.provider` from `.claude/tracker.json` and read the
+   provider doc `.claude/providers/<provider>.md` — it defines how every
+   tracker operation (`list_items`, `read_item`, `create_item`,
+   `move_state`, `add_comment`, `set_labels`, `checklist`), the ref
+   resolution and `<card-short>` work for this tracker. Missing config,
+   unknown provider, or missing provider doc → stop with
+   `Tracker provider '<name>' is not configured/supported. See .claude/providers/.`
    Verify the kit bin scripts exist and are executable
    (`.claude/bin/parse-verdict`, `harvest-learnings`,
    `render-learnings`). Missing → stop with
@@ -136,10 +148,10 @@ Combinations:
      exit.
    - The remaining non-flag positional, if any, is `<card-ref>`. Reject
      `≥2` positionals with
-     `Multiple card refs given. /trello-run accepts at most one card ref.`
+     `Multiple card refs given. /flow-run accepts at most one card ref.`
      and exit.
-2. Read `.claude/trello.json`. Extract
-   `lists.{ready, in_progress, review, blocked, done}`, `branch_prefix`,
+2. Read the rest of `.claude/tracker.json`. Extract
+   `states.{ready, in_progress, review, blocked, done}`, `branch_prefix`,
    `worktree_root`, `worker_log_dir`, `auto_merge_criteria`, `session_log`,
    `card_prefix`, the `research` block (`marker`, `doc_dir`, `target_repo`,
    `route`), the **runtime** config — `worker.{max_turns, model,
@@ -154,9 +166,9 @@ Combinations:
    the back-compat default (equal to `targets[default_target]`).
 3. Read last 30 lines of `.gilb/session-log.md` — skim for patterns
    (e.g., a card you're about to work on was just BLOCKED — check why).
-4. Via MCP `trello`, fetch open cards from all columns except `Icebox`
-   (filter out `idList == lists.icebox`) for cross-card view, AND
-   specifically the contents of the `ready` list. From these:
+4. Via the tracker (`list_items` per the provider doc), fetch open
+   cards from all pipeline states except `icebox` for cross-card view,
+   AND specifically the contents of the `ready` state. From these:
    - **If `<card-ref>` was given:** resolve it (see "Card ref resolution"
      below). If the resolved card isn't in `ready` → exit per the
      Invocation rules. Targets list = `[that card]`. (With `--resume` the
@@ -170,19 +182,13 @@ Combinations:
 
 #### Card ref resolution
 
-Apply these rules in order against the user-supplied `<card-ref>`:
-
-1. If it matches `^https?://trello\.com/c/([A-Za-z0-9]{8})(?:/.*)?$` →
-   `shortLink` = group 1.
-2. Else if it matches `^[A-Za-z0-9]{8}$` → `shortLink` = the ref itself.
-3. Else if it matches `^<card_prefix>-(\d+)$` (case-insensitive on
-   `card_prefix`) → look up the card whose `idShort` equals that
-   integer on the board.
-4. Else → exit with
-   `Unrecognized card ref: <ref>. Expected shortLink, <prefix>-<id>, or trello.com/c/ URL.`
-
-If shortLink lookup yields no card → exit with
-`Card <ref> not found on board.`.
+Resolve `<card-ref>` per the provider doc's "Ref resolution" section
+(URL → native short id → `<prefix>-<N>`, in that order). An
+unrecognized ref → exit with
+`Unrecognized card ref: <ref>. Expected <the provider's accepted forms>.`
+A ref that resolves to no card → exit with
+`Card <ref> not found.`. The provider doc also defines `<card-short>`
+(used in branch names and log/state filenames).
 
 ### Per card
 
@@ -201,7 +207,7 @@ repo-shaped values below — `repo_root`, `worktree_root`, `worker_log_dir`,
 `branch_prefix`, `toolchain` — come from the resolved target (falling back to
 the top-level keys when `targets` is absent, for back-compat). If a `repo:`
 label names a target missing from `targets` → `Blocked` with
-`[meta] Unknown execution target '<name>' (no targets.<name> in trello.json).`
+`[meta] Unknown execution target '<name>' (no targets.<name> in tracker.json).`
 
 For each card in the resolved targets list:
 
@@ -263,7 +269,7 @@ in_flight = {}            # cardId → {worktree, branch, pr_url, iter, log_path
 while pending or in_flight:
     while pending and len(in_flight) < N:
         card = pending.pop(0)
-        run Phase 1 for card           # sync, fast (worktree create + Trello move)
+        run Phase 1 for card           # sync, fast (worktree create + state move)
         spawn iter 1 worker for card   # async (background)
         in_flight[card.id] = state
 
@@ -282,14 +288,14 @@ while pending or in_flight:
 - **Phase 1 is serialized.** Worktree creation, the `In Progress` move,
   and the `[meta] Starting work` comment for the next card all happen
   on the meta-agent's main thread before the next worker spawn. This
-  keeps the Trello card list ordered and avoids `git` racing itself in
+  keeps the board ordered and avoids `git` racing itself in
   the parent repo.
 - **Worker spawns are async.** Each is `claude -p ... &` (background)
   with its own result/stderr files in `<worker_log_dir>`.
 - **Acceptance checks are serialized** per finished worker. Meta runs
   one acceptance procedure at a time (it competes for the same `cargo`
-  / `gh` / Trello-API tools as Phase 1 and Phase 3); this prevents
-  cargo registry locks and Trello rate-limit storms.
+  / `gh` / tracker tools as Phase 1 and Phase 3); this prevents
+  cargo registry locks and tracker rate-limit storms.
 - **Auto-merge decisions are serialized.** Only one `gh pr merge` at a
   time. If two cards both reach Phase 3, the second waits.
 - **Per-card iteration counter is independent.** Card A's iter 3 does
@@ -307,10 +313,9 @@ while pending or in_flight:
 - Two workers running cargo against the same workspace from different
   worktrees: each worktree has its own `target/`, so this is allowed.
   If RAM pressure is a concern, lower `N`.
-- `MCP trello` rate-limit: if a Trello API call fails with HTTP 429,
-  retry once after 5s; on second failure, treat as `MCP trello fails
-  mid-card` per Failure modes → stop. Leave already-spawned workers to
-  finish but do not start new ones.
+- Tracker rate-limit: on HTTP 429 retry once after 5s; on second
+  failure, treat as `tracker fails mid-card` per Failure modes → stop.
+  Leave already-spawned workers to finish but do not start new ones.
 
 ---
 
@@ -318,7 +323,7 @@ while pending or in_flight:
 
 a. Extract the `[meta] PLAN` comment from the card (latest one if multiple).
    If absent → move card to `Blocked` with
-   `[meta] No PLAN comment. Run /trello-check first.` Append session-log
+   `[meta] No PLAN comment. Run /flow-check first.` Append session-log
    `BLOCKED | no PLAN`. Skip.
 
 b. Parse PLAN per `.claude/prompts/plan-format.md`. Extract `## Metrics`:
@@ -442,7 +447,7 @@ re-enter:
 
 `done` means the card actually reached its terminal list (Done / Review
 / Blocked) — an accepted verdict alone is `merge_decision`, so a crash
-inside the auto-merge decision stays resumable. `/trello-run --resume
+inside the auto-merge decision stays resumable. `/flow-run --resume
 <card-ref>` reloads this file (see Invocation). Writing is best-effort:
 a failed write never changes the iteration outcome — note it once in
 chat and continue.
@@ -450,7 +455,7 @@ chat and continue.
 ### Step 2.1a — TDD gate (spec-first, conditional)
 
 Applies only when ALL hold: `iter == 1`, code card (not research),
-`tdd_gate.enabled` in `trello.json` is true, and the PLAN's Metrics meet
+`tdd_gate.enabled` in `tracker.json` is true, and the PLAN's Metrics meet
 the gate threshold (`Estimated size` ≥ `tdd_gate.min_size` OR `Risk` ≥
 `tdd_gate.min_risk`). Otherwise skip to Step 2.1 (worker-iter1.md already
 carries inline test-first discipline for ungated cards).
@@ -777,7 +782,7 @@ Otherwise:
 
 Only runs if Phase 2 ended with acceptance passing (gaps empty).
 
-Read `auto_merge_criteria` from `.claude/trello.json`:
+Read `auto_merge_criteria` from `.claude/tracker.json`:
 - `min_confidence` (default 7)
 - `max_risk` (default "medium")
 - `require_ci_green` (default true)
@@ -926,7 +931,7 @@ four phases with these deltas only — everything else is unchanged.
 Research's meta-repo worktree is just the `targets.meta` case of the general
 execution-target mechanism (Bootstrap step 2 + "Per card" target resolution):
 `research.target_repo` `"."` ≡ `targets.meta.repo_root`, `toolchain: docs`. The
-broader multi-board vision (several Trello boards → repos) is
+broader multi-board vision (several boards → repos) is
 deliberately deferred until a second board exists.
 
 ## Failure modes
@@ -937,11 +942,11 @@ deliberately deferred until a second board exists.
 | Research card: worker changed non-doc files | Acceptance gap (R1) → iteration; do not merge code from a research card. |
 | Worktree path occupied by remnants | Blocked: "worktree exists, manual cleanup". Do not delete. |
 | Worker needs env vars (secrets) not in worktree env | Blocked. Don't forward secrets yourself. |
-| `repo:<name>` label names a target absent from `targets` | Blocked: `Unknown execution target '<name>'`. Add it to `trello.json` or fix the label. |
+| `repo:<name>` label names a target absent from `targets` | Blocked: `Unknown execution target '<name>'`. Add it to `tracker.json` or fix the label. |
 | Rails preflight (`bundle install` / `bin/rails db:test:prepare`) fails | Blocked: `Rails preflight failed: <cmd>`. Do not spawn the worker; the toolchain/DB isn't ready on this host. |
 | PR conflicts with main by acceptance time | Gap: "PR has merge conflicts with main. Rebase needed." → iteration. |
 | Worker iter N opened NEW PR instead of pushing existing | Blocked: explicit message. |
-| MCP `trello` fails mid-card | Stop. Card stays in current state. |
+| Tracker (MCP/CLI) fails mid-card | Stop. Card stays in current state. |
 | Worker result JSON missing / empty / unparseable | Blocked: crash path per Step 2.2. Point to the stderr log. |
 | `jq` not installed | Stop at bootstrap. It is required to parse worker result envelopes and by the guardrail hooks. |
 | Kit hooks missing from `<meta-project>/.claude/hooks/` | Proceed without guardrails; note once in chat. Acceptance still enforces scope post-hoc. |
@@ -961,5 +966,5 @@ deliberately deferred until a second board exists.
 | `--resume` and the state file is not valid JSON (torn write) | Exit: `State file unreadable — inspect manually.` No state change. |
 | `--resume` and worktree/branch from the state file are gone | Blocked: `Resume failed`. Manual cleanup; do not recreate silently. |
 | `--resume` a card whose original meta session is still alive | Undetectable by meta — the human must ensure the old run is dead first (two metas double-drive the card: duplicate spawns, duplicate comments). |
-| State says `done` but the card is still in `In Progress` | The final Trello move failed after the terminal decision. Report the last iter_log outcome; the human finishes the move. |
+| State says `done` but the card is still in `In Progress` | The final state move failed after the terminal decision. Report the last iter_log outcome; the human finishes the move. |
 | State-file write fails (disk, permissions) | Continue the iteration normally; note once in chat. Resume just won't be available for this card. |

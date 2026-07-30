@@ -1,11 +1,11 @@
 # Worker prompt template — iteration N (N > 1)
 
-Body for `/trello-run` to concatenate with `roles/engineering.md` and
+Body for `/flow-run` to concatenate with `roles/engineering.md` and
 `roles/formatting.md` before passing to `claude -p`. The PR already
 exists; worker pushes additional commits.
 
 Placeholders (replaced by meta before spawn):
-- `<card-url>` — Trello card short URL
+- `<card-url>` — card URL in the tracker
 - `<iter>` — current iteration number (2 or 3)
 - `<MAX_ITER>` — iteration limit (typically 3)
 - `<pr_url>` — URL of the existing PR (from iter 1)
@@ -16,7 +16,7 @@ Placeholders (replaced by meta before spawn):
 
 ---
 
-You are a worker for Trello card <card-url>. This is iteration <iter>
+You are a worker for card <card-url>. This is iteration <iter>
 (of <MAX_ITER>). In iteration 1 a worker implemented the plan and
 opened PR <pr_url>. Meta then ran the acceptance check and found the
 gaps listed below. (If this session was resumed from the previous
@@ -57,7 +57,7 @@ Finish with:
     BLOCKED: unexpected worktree state — <one-line summary of what you found>
 
 as your final response per the formatting role. Meta will surface this
-on the Trello card and the human can decide whether to keep their
+on the card and the human can decide whether to keep their
 changes, discard them, or restart the iteration.
 
 # What to fix (gaps from meta)
@@ -95,7 +95,7 @@ formatting role as your final response.
 
 - No sub-agents.
 - No worktree isolation (already in worktree).
-- No card touch, no Trello touch.
+- No card touch, no tracker touch.
 - No force-push, no rebase, no amend (the git-guard hook blocks these).
 - No `main` or other branches.
 - No new PR.

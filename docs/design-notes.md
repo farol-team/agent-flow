@@ -59,7 +59,7 @@ learnings file. Triage reads it when drafting PLANs; workers get the ≤5
 most relevant entries (file/dir overlap with the PLAN's `## Files`, or
 key-vs-title match) injected before touching code. Staleness = every
 anchored file gone from `git ls-files`. The file is committed —
-`/trello-run` Phase 4 publishes each card's harvest as a
+`/flow-run` Phase 4 publishes each card's harvest as a
 `chore(learnings)` commit, because uncommitted memory is host-local
 and dies with the machine.
 
@@ -77,48 +77,4 @@ the orchestrator but dropped from the prompt's output contract: all
 break silently at runtime, possibly weeks later.
 
 **Mechanism.** `tests/kit-invariants.sh` (tier 1, free, every PR): shell
-syntax + exec bits, JSON validity, the config contract
-(`kit/config-contract.txt`, also enforced against the consumer's real
-config by `workflow-kit-sync`), dangling `.claude/...` references,
-placeholder discipline (body uses ⇒ header declares), verdict-contract
-parity between prompts and `trello-run.md`, and prompt size budgets
-(~30% above current size — growth must be a conscious diff in the test
-file, not silent accretion; every prompt line is context spent on every
-card).
-
-**Planned tier 2** (opt-in, costs money): spawning a real `claude -p`
-on a fixture card to exercise the PLAN parser and the JSON envelopes
-end-to-end. Intentionally not in CI-per-PR.
-
-## Orchestrator-as-prompt, state-as-journal
-
-**Problem.** `/trello-run` is a ~950-line procedure executed by an LLM;
-its per-card state (`finding_history`, `iter_log`, costs) originally
-lived only in the meta session's context, so a dead session stranded an
-In-Progress card with a live worktree and PR but no recoverable state.
-
-**Mechanism.** Meta journals the full card state to
-`<worker_log_dir>/<card-short>-state.json` at every phase boundary,
-with an explicit `next_action` covering the whole loop (initial spawn,
-TDD-gate phases, acceptance, merge decision, done);
-`/trello-run --resume <card>` re-enters there. Journal writes are
-atomic (tmp + mv) and best-effort — they never change an iteration
-outcome.
-
-**Direction — first slice shipped.** The mechanical parts of the
-orchestrator are moving into small tested scripts (`kit/bin/`), leaving
-the model only the judgment calls: `parse-verdict` (tolerant verdict
-extraction + fingerprints out of the CLI envelope),
-`harvest-learnings`, `render-learnings` — each behavior-pinned by
-`tests/kit-bin.test.sh`. Still in the prompt: spawning, manifest
-generation, the journal itself.
-
-## Two human gates, everything else agents
-
-The human approves the plan (drag to Ready for AI) and reviews PRs that
-fail auto-merge criteria; research cards always route to Review. All
-other transitions are agent-driven with the full audit trail in card
-comments — the card, not the chat log, is the system of record. This is
-the core UX bet of the kit: a plan you can read and a drag you can
-refuse are a cheaper, better-placed control than interactive
-supervision of an agent typing.
+syntax + exec bits, JSON validity, the config contra

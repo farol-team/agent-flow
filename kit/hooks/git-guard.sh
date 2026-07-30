@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# git-guard.sh — PreToolUse hook (Bash) for trello-flow workers.
-# Provisioned by /trello-run Phase 1 into each card's worktree.
+# git-guard.sh — PreToolUse hook (Bash) for flow workers.
+# Provisioned by /flow-run Phase 1 into each card's worktree.
 #
 # Deterministically blocks the git operations the worker prompts forbid
 # (history rewrites, branch escapes, self-merge). Exit 2 rejects the

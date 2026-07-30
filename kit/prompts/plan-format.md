@@ -1,7 +1,7 @@
 # PLAN format (canonical)
 
 Single source of truth for what a `[meta] PLAN` comment must look like in a
-Trello card. Read by `/trello-check` (writes it) and `/trello-run` (parses
+tracker card. Read by `/flow-check` (writes it) and `/flow-run` (parses
 it). When you change this file, both commands pick up the new format on
 their next run — no other updates needed.
 
@@ -38,7 +38,7 @@ Explain HOW, not a restatement of Scope.>
 ## Tests
 List the commands that prove the change, then the **mandatory test + lint/
 format gates for the card's toolchain**. The toolchain and its gate commands
-come from the card's execution target in `trello.json` (`targets[<name>]`,
+come from the card's execution target in `tracker.json` (`targets[<name>]`,
 resolved by the card's `repo:<name>` label; otherwise `default_target`):
 author the gates from that target's **`test_cmd`** and **`lint_cmd`**
 templates, filling in the touched path/crate. Use the gates for that one
@@ -94,7 +94,7 @@ justification>`. Examples:
 - P2 Incremental: n/a — no recurring jobs touched
 A `violates` without a justification the human can approve = the plan
 fails self-check. This section is for the worker and the acceptance check
-(which re-verifies the DIFF against the same articles); /trello-run does
+(which re-verifies the DIFF against the same articles); /flow-run does
 not parse it.
 
 ## Behavior (optional — M/L cards)
@@ -119,7 +119,7 @@ check a reviewer can run.>
 ```
 
 The three sections above (`## Behavior`, `## Acceptance criteria`,
-`## Cross-card notes`) are OPTIONAL and for human readers only — `/trello-run`
+`## Cross-card notes`) are OPTIONAL and for human readers only — `/flow-run`
 does not parse them. `## Behavior` and `## Acceptance criteria` are borrowed
 from the design-doc template for larger (M/L) cards, where an end-to-end
 narrative and explicit done-conditions prevent drift; omit them on small (S)
@@ -135,7 +135,7 @@ Walk this checklist; if any item fails — rework or downgrade to QUESTIONS
 - [ ] Every command in `## Tests` will actually run (correct crate name,
       test filter resolves).
 - [ ] `## Tests` includes the target's mandatory gates — its `test_cmd` for
-      the touched path + its `lint_cmd` (lint+format) — from `trello.json`.
+      the touched path + its `lint_cmd` (lint+format) — from `tracker.json`.
       (Docs/research cards have no gates.)
 - [ ] Those gates are scoped to what `## Files` touches (a single
       crate/package/path), not project-wide, unless the card is a deliberate
@@ -163,7 +163,7 @@ Walk this checklist; if any item fails — rework or downgrade to QUESTIONS
 
 ## RESEARCH PLAN format (research cards)
 
-For cards marked `[research]` (see `card-eval.md` step A2), `/trello-check`
+For cards marked `[research]` (see `card-eval.md` step A2), `/flow-check`
 writes a `[meta] RESEARCH PLAN` instead of a code `[meta] PLAN`. The
 deliverable is a doc, not code. First line is exactly `[meta] RESEARCH
 PLAN`, then:
@@ -203,20 +203,20 @@ search (name specific projects, vendors, tools), and the angle. 3-6 items.>
 <optional, same as code PLAN>
 ```
 
-`## Metrics` uses the SAME field names as a code PLAN, so `/trello-run`
+`## Metrics` uses the SAME field names as a code PLAN, so `/flow-run`
 parses metrics identically. The other section headers differ
 (`## Question` / `## Investigation` / `## Deliverable` replace `## Scope`
 / `## Files` / `## Approach` / `## Tests`). Research cards never
-auto-merge — they always route to `Review` (see `trello-run.md` →
+auto-merge — they always route to `Review` (see `flow-run.md` →
 "Research cards").
 
-## Parsing contract (for /trello-run)
+## Parsing contract (for /flow-run)
 
 An optional `Base:` line directly under the `[meta] PLAN` first line names the
-base branch (`^Base:\s*(\S+)$`); when absent the base is `main`. `/trello-run`
+base branch (`^Base:\s*(\S+)$`); when absent the base is `main`. `/flow-run`
 uses it for the worktree checkout, the PR base, and the acceptance diff.
 
-`/trello-run` parses these exact section headers (`## Scope`, `## Files`,
+`/flow-run` parses these exact section headers (`## Scope`, `## Files`,
 `## Approach`, `## Tests`, `## Out of scope`, `## Metrics`). If a card has
 a `[meta] PLAN` comment that lacks `## Metrics` or has unparseable values
 (non-numeric Confidence, unknown Risk), the card goes to `Blocked` with a

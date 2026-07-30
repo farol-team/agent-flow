@@ -1,9 +1,9 @@
 ---
 description: Interactively answer cards stuck in Human Questions via AskUserQuestion
-allowed-tools: Read, Glob, Grep, AskUserQuestion, Edit(.gilb/**), Write(.gilb/**), Bash(date:*), mcp__trello
+allowed-tools: Read, Glob, Grep, AskUserQuestion, Edit(.gilb/**), Write(.gilb/**), Bash(date:*), Bash(gh:*), mcp__trello, mcp__linear
 ---
 
-# /trello-questions
+# /flow-questions
 
 Role: **interactive question-answering meta-agent**. Invoked manually by the
 user when they have time to unblock cards stuck in `Human Questions`.
@@ -13,42 +13,44 @@ question (not blocked-by, not pending-split-confirm), surfaces the single
 most consequential question via the `AskUserQuestion` tool with explicit
 options + reasoning, then records the user's answer as a `[meta] ANSWERED`
 comment. Cards with the main fork answered move back to `Backlog` so the
-next `/trello-check` re-triages with the new info.
+next `/flow-check` re-triages with the new info.
 
-This complements `/trello-check`'s AUTO-ANSWERED branch (`card-eval.md`
-step F): /trello-check handles safe defaults autonomously; /trello-questions
+This complements `/flow-check`'s AUTO-ANSWERED branch (`card-eval.md`
+step F): /flow-check handles safe defaults autonomously; /flow-questions
 handles the gaps that genuinely need the human.
 
 ## Contract (what you must NOT do)
 
 - Do NOT use the `Agent` tool — sequential per-card iteration.
-- Do NOT spawn workers (that is `/trello-run`).
+- Do NOT spawn workers (that is `/flow-run`).
 - Do NOT skip cards by default. If a card has no `[meta] QUESTIONS` body,
   note it and move on (don't try to invent questions).
 - Do NOT batch multiple cards into one `AskUserQuestion` call. One card,
   one question per `AskUserQuestion` turn.
-- Do NOT ask questions whose answers /trello-check could now auto-answer
-  per `card-eval.md` step F. Those route to "SKIP — re-run /trello-check"
+- Do NOT ask questions whose answers /flow-check could now auto-answer
+  per `card-eval.md` step F. Those route to "SKIP — re-run /flow-check"
   instead; the user shouldn't waste turns on them.
 - Do NOT move cards into `Ready for AI` — only the user does that.
 - Do NOT comment on cards without the `[meta] ` prefix.
 
 ## Sources of truth
 
-- `.claude/trello.json` — board, list IDs (`human_questions`, `backlog`).
+- `.claude/tracker.json` — board, list IDs (`human_questions`, `backlog`).
 - `.claude/prompts/card-eval.md` — question categories + auto-answer policy.
-- `trello-workflow.md` — optional project-owned workflow doc (absent
+- `flow-workflow.md` — optional project-owned workflow doc (absent
   by default).
-- `.gilb/session-log.md` — recent automation history.
+- the session log (path: `session_log` in `tracker.json`, default `.gilb/session-log.md`) — recent automation history.
 
 ## Algorithm
 
 ### Bootstrap
 
-1. Read `.claude/trello.json` → `lists.human_questions`, `lists.backlog`,
+1. Read `.claude/tracker.json` → `states.human_questions`, `states.backlog`,
    `card_prefix`, `session_log`.
-2. Read last 30 lines of `.gilb/session-log.md` for context.
-3. Via MCP `trello`, fetch open cards in `Human Questions`. For each,
+2. Read last 30 lines of the session log for context.
+3. Via the tracker (`list_items(human_questions)` — provider doc from
+   `.claude/providers/<tracker.provider>.md`), fetch open cards in
+   `Human Questions`. For each,
    fetch comments.
 4. Categorize each card by its latest `[meta] ...` comment:
    - **`[meta] ANSWERED` / `[meta] DEFERRED`** as the latest meta entry →
@@ -78,10 +80,10 @@ For each included card, sequentially:
    four-condition policy in `card-eval.md` step F (safe category +
    confidence ≥ 8 + reversible + ≤2 per card), skip the user prompt:
    ```
-   [meta] SKIP — re-run /trello-check
-   All gaps are now eligible for /trello-check's AUTO-ANSWERED fast-path
+   [meta] SKIP — re-run /flow-check
+   All gaps are now eligible for /flow-check's AUTO-ANSWERED fast-path
    (safe categories, reversible defaults). Move this card to Backlog and
-   run /trello-check; it will post [meta] ASSUMED + PLAN without needing
+   run /flow-check; it will post [meta] ASSUMED + PLAN without needing
    user input here.
    ```
    Move card to Backlog. Move on to next card.
@@ -126,7 +128,7 @@ For each included card, sequentially:
      questions on the card. Use the same `Q<N> (<category>):` framing
      as `card-eval.md`. Mark each "(default; override here if wrong)".>
 
-     Re-triage on next /trello-check will produce a PLAN with these
+     Re-triage on next /flow-check will produce a PLAN with these
      answers baked in. To override any answer, comment with the
      alternative before that runs.
      ```
@@ -152,7 +154,7 @@ For each included card, sequentially:
    - Treat as a normal answer with the verbatim text as the choice.
    - Post `[meta] ANSWERED` with the text. Move card to `Backlog`.
 
-7. **Append to `.gilb/session-log.md`:**
+7. **Append to the session log:**
    ```
    <ISO UTC ts>  <card-short>  <EVENT>  | <summary>
    ```
@@ -162,7 +164,7 @@ For each included card, sequentially:
    - Defer: `DEFERRED-INTERACTIVE | <category>: question left open`
    - Close: `CLOSED-INTERACTIVE | <reason>`
    - Skip (auto-answerable):
-     `SKIPPED-INTERACTIVE | all gaps eligible for /trello-check auto-answer`
+     `SKIPPED-INTERACTIVE | all gaps eligible for /flow-check auto-answer`
 
 ### Summary
 
@@ -174,12 +176,12 @@ Interactive answer session complete:
   - → Backlog (answered):   <M>
   - → Closed (archived):    <K>
   - → Left in Human Q (deferred): <D>
-  - → Routed to /trello-check (all gaps auto-answerable): <A>
+  - → Routed to /flow-check (all gaps auto-answerable): <A>
 - Skipped (blocked-by upstream, or pending split-confirmation): <S>
 - Mis-categorized (in Human Questions without a QUESTIONS comment): <X>
 ```
 
-Then suggest a single next action — e.g. `Run /trello-check to re-triage
+Then suggest a single next action — e.g. `Run /flow-check to re-triage
 the <M+A> cards now in Backlog`, or `Comment <split_confirmation_phrase>
 on the <S-blocked-by-split> cards if you want them split-executed`.
 
@@ -187,9 +189,9 @@ on the <S-blocked-by-split> cards if you want them split-executed`.
 
 | Situation | Action |
 |---|---|
-| MCP `trello` not responding | Stop. Error to chat. Don't fall back to raw curl. |
-| `.claude/trello.json` malformed | Stop. Don't guess fields. |
-| `.gilb/session-log.md` missing | Create from template; proceed. Log the recovery action. |
+| Tracker (MCP/CLI) not responding | Stop. Error to chat. Don't fall back to raw REST/curl. |
+| `.claude/tracker.json` malformed | Stop. Don't guess fields. |
+| the session log missing | Create from template; proceed. Log the recovery action. |
 | Card has no `[meta] QUESTIONS` body but is in `Human Questions` | Skip the Q&A, list in the "Mis-categorized" tally in the summary. |
 | User cancels `AskUserQuestion` (no answer returned) | Treat as Defer. Post `[meta] DEFERRED`. Continue to next card. |
 | User picks the Close/Archive option | Confirm in chat once before archiving, since archive is hard to undo from this skill. |

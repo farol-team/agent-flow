@@ -1,21 +1,19 @@
 {
-  "board": {
-    "short_id": "<from board URL trello.com/b/<short_id>/...>",
-    "id": "<board id via API/MCP>",
-    "name": "<board name>",
-    "url": "https://trello.com/b/<short_id>/<slug>"
+  "tracker": {
+    "provider": "github",
+    "repo": "<owner>/<name>"
   },
-  "lists": {
-    "icebox": "<list id>",
-    "backlog": "<list id>",
-    "triage": "<list id>",
-    "human_questions": "<list id>",
-    "plan_proposed": "<list id>",
-    "ready": "<list id>",
-    "in_progress": "<list id>",
-    "review": "<list id>",
-    "blocked": "<list id>",
-    "done": "<list id>"
+  "states": {
+    "icebox": "flow:icebox",
+    "backlog": "flow:backlog",
+    "triage": "flow:triage",
+    "human_questions": "flow:human-questions",
+    "plan_proposed": "flow:plan-proposed",
+    "ready": "flow:ready",
+    "in_progress": "flow:in-progress",
+    "review": "flow:review",
+    "blocked": "flow:blocked",
+    "done": "flow:done"
   },
   "auto_merge_criteria": {
     "min_confidence": 7,
@@ -69,7 +67,9 @@
       "lint_cmd": "<e.g. bin/rubocop <path> / cargo clippy ...>"
     }
   },
-  "project_context_docs": ["README.md"],
+  "project_context_docs": [
+    "README.md"
+  ],
   "session_log": ".gilb/session-log.md",
   "learnings": ".claude/learnings.jsonl",
   "comment_prefixes": {

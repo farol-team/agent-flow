@@ -1,6 +1,6 @@
 # Acceptance check — subagent prompt
 
-Body for `/trello-run` to concatenate with `roles/versatile.md` and
+Body for `/flow-run` to concatenate with `roles/versatile.md` and
 `roles/formatting.md` before spawning as a separate subagent
 (`claude -p` or `Agent` tool). The subagent verifies the worker's
 deliverables against the PLAN and returns a structured verdict.
@@ -8,7 +8,7 @@ deliverables against the PLAN and returns a structured verdict.
 acceptance is audit work, not code editing.
 
 Placeholders (replaced by meta before spawn):
-- `<card-url>` — Trello card short URL
+- `<card-url>` — card URL in the tracker
 - `<pr_url>` — URL of the PR opened in iter 1
 - `<worktree-path>` — absolute path to the card's git worktree
 - `<branch>` — branch name (`origin/<base>..<branch>` is the diff)
@@ -19,7 +19,7 @@ Placeholders (replaced by meta before spawn):
 
 ---
 
-You are the acceptance-check subagent for Trello card <card-url>. The
+You are the acceptance-check subagent for card <card-url>. The
 worker just finished with `PR_URL=<pr_url>`. Your job is to verify
 that the diff and the PR match the plan. You do not write code; you
 only inspect and run tools (meta spawns you with the edit tools
@@ -145,7 +145,7 @@ gh pr view <pr_url> --json title,body
 
 Verify:
 - `title` is not empty, not a placeholder (`wip`, `test`).
-- `body` first line is exactly `Trello: <card-url>`.
+- `body` first line is exactly `Card: <card-url>`.
 - Body contains `## What`, `## Why`, `## Test plan` headers.
 
 Gap: `PR body missing section <X>` or `PR does not link to card`.
@@ -276,7 +276,7 @@ with `BLOCKED: <reason>` per the formatting role instead of the JSON
 line. Anything else — extra prose, multiple lines — makes your verdict
 unusable and blocks the card.
 
-Do NOT post to Trello, do NOT comment on the PR, do NOT push or merge.
+Do NOT post to the tracker, do NOT comment on the PR, do NOT push or merge.
 Meta handles all card / PR / merge operations based on your verdict.
 
 # Diagnostic tips (not gaps)
@@ -344,7 +344,7 @@ Gap: `Findings lack source citations (e.g. <claim>).`
 gh pr view <pr_url> --json title,body
 ```
 
-`body` first line is exactly `Trello: <card-url>`; body contains
+`body` first line is exactly `Card: <card-url>`; body contains
 `## What`, `## Conclusion`, `## Sources`.
 
 Gap: `PR body missing section <X>` or `PR does not link to card`.
@@ -354,5 +354,5 @@ Gap: `PR body missing section <X>` or `PR does not link to card`.
 Same as code Check 6 (subject ≤72 chars, imperative, required footer).
 
 Note: research cards never auto-merge — even an empty `gaps` verdict
-routes them to `Review` (meta enforces this in `trello-run.md`). Your
+routes them to `Review` (meta enforces this in `flow-run.md`). Your
 job is still to report gaps honestly.

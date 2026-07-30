@@ -1,8 +1,8 @@
 # Card evaluation procedure
 
-Sub-prompt called by `/trello-check` for each card it triages. Given one
+Sub-prompt called by `/flow-check` for each card it triages. Given one
 card, produce one of three outcomes: **PLAN**, **QUESTIONS**, or **SPLIT
-proposal**. The orchestrator (trello-check.md) handles column moves and
+proposal**. The orchestrator (flow-check.md) handles column moves and
 session-log writes; this file is the decision logic.
 
 ## Input
@@ -28,7 +28,7 @@ When this procedure starts:
 ### A2. Research-card detection (special type)
 
 A card is a **research card** if its title contains the
-`research.marker` from `.claude/trello.json` (default `[research]`,
+`research.marker` from `.claude/tracker.json` (default `[research]`,
 case-insensitive), independent of the `[<card_prefix>-N]` prefix —
 e.g. `[ACME-32] [research] Competitor pricing pages — extraction approach`.
 
@@ -57,7 +57,7 @@ than silently planning code.
 ### A3. Execution-target detection (which repo + toolchain)
 
 A card's **execution target** decides which repo the work lands in and which
-build toolchain its `## Tests` gates use. Resolve it from `.claude/trello.json`:
+build toolchain its `## Tests` gates use. Resolve it from `.claude/tracker.json`:
 
 - If the card carries a `<repo_label_prefix><name>` label (default prefix
   `repo:`, e.g. `repo:gilb-web`) → target = `targets[name]`.
@@ -91,19 +91,19 @@ the `default_target` unless a `repo:` label points elsewhere):
 - If the card mentions filenames / modules / functions — open them with
   Read; confirm they exist now (not just in plans or your memory).
 - If the task is architectural — check the project's planning/architecture
-  docs (the paths in `trello.json` → `project_context_docs`, plus
+  docs (the paths in `tracker.json` → `project_context_docs`, plus
   `.claude/project-context.md`) for existing decisions on the topic.
 - Glance at the target's layout and manifest for the toolchain — Rust:
   the crate's `Cargo.toml` + `src/`; Rails: `config/routes.rb`,
   `app/`, `Gemfile`, `spec/`|`test/`; Node: `package.json` + the package
   dir; etc. Confirm the test/lint commands match the target's
-  `test_cmd` / `lint_cmd` in `trello.json`.
+  `test_cmd` / `lint_cmd` in `tracker.json`.
 - If the card references a milestone/phase named in the project's planning
   docs — find it and understand its pre-conditions.
 - If the task touches the frontend AND the project provides an optional
   UI guide at `.claude/prompts/ui-design.md` — read it BEFORE writing the
   PLAN and cite it in the PLAN's `## Approach`.
-- Read the project learnings file (`trello.json` `learnings`, default
+- Read the project learnings file (`tracker.json` `learnings`, default
   `.claude/learnings.jsonl`; skip silently if missing). Filter to entries
   whose `files[]` overlap the card's likely scope or whose `key` matches
   the card's topic. Let matching `pitfall` entries inform `## Tests` /
@@ -225,7 +225,7 @@ This task is larger than one PR. I suggest splitting it into:
 3. **<sub-task 3 title>** — <one-line scope>
 
 To confirm: comment the exact phrase `split confirmed` (case-insensitive)
-on this card. On the next /trello-check I will create the sub-cards in
+on this card. On the next /flow-check I will create the sub-cards in
 Backlog (labeled `ai-generated`) and archive this one.
 
 To reject: refine the scope in a comment so it fits one PR, then move
@@ -233,7 +233,7 @@ back to Backlog.
 ```
 
 Do not create or archive cards yourself in this step. The split-execution
-phase of `/trello-check` handles that when it sees the confirmation
+phase of `/flow-check` handles that when it sees the confirmation
 phrase.
 
 **F2. QUESTIONS** — at least one gap is not auto-answerable.
@@ -287,7 +287,7 @@ Answer: <one-line specific choice>
 Reasoning: <one-to-two lines on why this default is safe — cite file paths or
 research docs when relevant>
 Override: comment with the alternative and move the card back to Backlog;
-the next /trello-check will re-evaluate.
+the next /flow-check will re-evaluate.
 ```
 
 If self-check fails (especially overall Confidence < 7) → downgrade the
@@ -315,13 +315,13 @@ vague to scope an investigation → F2 QUESTIONS instead.
 | Refactoring with no user-visible change | F3 PLAN is fine, but Scope must explicitly say "no functional change". Tests: include commands that confirm existing behavior is preserved. |
 | Card is marked `[research]` (see step A2) | F4 RESEARCH PLAN (or F2 QUESTIONS if the question is too vague). Deliverable is a doc under `research/`, never code. |
 | Card is clearly research/spike but NOT marked `[research]` | F2 QUESTIONS: "This looks like research, not code. Add the `[research]` marker to the title so it routes to a RESEARCH PLAN, or reformulate as 'on the basis of X — implement Y'." |
-| MCP `trello` does not respond | Stop, error to chat. Don't use a curl fallback. |
+| Tracker (MCP/CLI) does not respond | Stop, error to chat. Do not use a raw REST fallback. |
 | `.gilb/session-log.md` missing or unreadable | Create it (touch + header from existing template); proceed. Log the recovery action in chat. |
 
 ## Output
 
 This procedure does not move the card or post comments by itself — the
-orchestrator (`/trello-check`) does. It just produces:
+orchestrator (`/flow-check`) does. It just produces:
 
 - The outcome type: `PLAN`, `QUESTIONS`, or `SPLIT`.
 - The comment body (formatted per F1/F2/F3 above).

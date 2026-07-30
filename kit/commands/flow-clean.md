@@ -1,12 +1,12 @@
 ---
 description: List finished-card worktrees and remove the ones the human confirms. The sanctioned cleanup path for "worktrees stay for inspection".
 argument-hint: ""
-allowed-tools: Read, Glob, Grep, Bash, mcp__trello
+allowed-tools: Read, Glob, Grep, Bash, mcp__trello, mcp__linear
 ---
 
-# /trello-clean
+# /flow-clean
 
-Role: housekeeping meta-agent. `/trello-run` never removes worktrees
+Role: housekeeping meta-agent. `/flow-run` never removes worktrees
 (they stay for human inspection — see its Phase 4), and workers are
 hook-blocked from `git worktree remove`. Without a sanctioned cleanup
 path they accumulate forever; this command is that path. It NEVER
@@ -14,9 +14,9 @@ removes anything without an explicit per-run human confirmation.
 
 ## Algorithm
 
-1. Read `.claude/trello.json` — the `targets` map (fall back to the
+1. Read `.claude/tracker.json` — the `targets` map (fall back to the
    top-level `repo_root`/`worktree_root` when absent) and
-   `lists.{done, blocked}`.
+   `states.{done, blocked}`.
 
 2. For each target: `git -C <repo_root> worktree list --porcelain`;
    keep worktrees whose path lies under that target's `worktree_root`.
@@ -24,7 +24,8 @@ removes anything without an explicit per-run human confirmation.
 
 3. For each worktree, derive `<card-short>` from the directory name
    (`<card-short>-<slug>`) and classify:
-   - **Card state** (Trello MCP): find the card by shortLink prefix.
+   - **Card state** (tracker, per `.claude/providers/<provider>.md`):
+     resolve the card from `<card-short>`.
      Card in `Done` → cleanup candidate. Card in `Blocked` / `Review` /
      `In Progress` / not found → keep (still under active inspection).
    - **Branch state** (`gh pr list --head <branch> --state all`):
@@ -57,5 +58,5 @@ removes anything without an explicit per-run human confirmation.
 |---|---|
 | `git worktree remove` refuses (dirty/locked) | Keep; report `inspect by hand`. Never `--force`. |
 | `branch -d` refuses (unmerged) | Keep the branch, report it — an unmerged branch for a Done card is itself a finding. |
-| Trello MCP unavailable | Stop. Card state is the primary safety signal; do not clean on branch state alone. |
+| Tracker unavailable | Stop. Card state is the primary safety signal; do not clean on branch state alone. |
 | Worktree dir exists but `git worktree list` doesn't know it | Report as orphan; leave for the human (`git worktree prune` is the human's call). |
