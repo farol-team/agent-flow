@@ -61,14 +61,19 @@ Four forms, all run from a Claude Code session in the repo:
   inspect <path> and the worker logs manually.` No state change.
   Meta reloads the state, verifies the worktree and branch still exist
   (either missing → `Blocked` with `[meta] Resume failed: <what>. Manual
-  cleanup.`), then re-enters at the recorded `next_action`:
-  `spawn_iter_<N>` → Step 2.1 with `iter = N`; `tdd_critic` →
-  Step 2.1a.2; `tdd_impl` → Step 2.1a.4 (phase B, `--resume` the
-  journaled `session_id`); `acceptance` → Step 2.3; `merge_decision` →
-  Phase 3; `done` → report the last `iter_log` outcome (the card
-  reached a terminal decision; if its list disagrees, the final Trello
-  move failed — finish it manually) and exit. `--parallel` is ignored
-  with `--resume`.
+  cleanup.`), re-fetches the prompt inputs the journal does not carry —
+  the `[meta] PLAN` comment and, for `iter > 1`, the `<gaps-list>` from
+  the last `[meta] Iteration` audit comment — from the card, then
+  re-enters at the recorded `next_action`:
+  `spawn_iter_1` → the Step 2.1a TDD-gate eligibility check (NOT
+  straight to Step 2.1 — a gated card must not silently lose its
+  spec-first path); `spawn_iter_<N≥2>` → Step 2.1 with `iter = N`;
+  `tdd_critic` → Step 2.1a.2; `tdd_impl` → Step 2.1a.4 (phase B,
+  `--resume` the journaled `session_id`); `acceptance` → Step 2.3;
+  `merge_decision` → Phase 3; `done` → report the last `iter_log`
+  outcome (the card reached a terminal decision; if its list disagrees,
+  the final Trello move failed — finish it manually) and exit.
+  `--parallel` is ignored with `--resume`.
 
 Combinations:
 - `/trello-run GILB-3` → exactly that card, sequential by construction.
@@ -406,7 +411,10 @@ In-memory state for this card:
 context; a dead meta session loses it while the worktree and PR live on.
 So meta journals the whole card state as one JSON object to
 `<target.worker_log_dir>/<card-short>-state.json` — all fields above plus
-`card_short`, `branch`, `worktree`, `base`, `pr_url`, and `next_action`.
+`card_short`, `branch`, `worktree`, `base`, `pr_url`,
+`tdd_critic_rejected` (has the test critic already used its one
+rejection — so a resume at `tdd_critic` cannot grant a second respawn
+budget), and `next_action`.
 Write ATOMICALLY (write to `<path>.tmp`, then `mv` over) at each of
 these points, with the `next_action` that names the step a resume should
 re-enter:

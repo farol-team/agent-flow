@@ -10,8 +10,9 @@
 #        KIT_REF=<branch|sha> bin/workflow-kit-sync
 # Requires: gh (authenticated), git, rsync, jq.
 #
-# Exit codes: 0 = synced; 2 = synced, but .claude/trello.json is missing
-# required keys (fix before committing).
+# Exit codes: 0 = synced; 2 = synced, but .claude/trello.json failed the
+# contract check (missing required keys, or not valid JSON) — fix before
+# committing.
 set -euo pipefail
 
 KIT_REPO="${KIT_REPO:-rodnik-ai/agent-workflow}"
@@ -51,7 +52,7 @@ elif ! jq empty "$CONF" >/dev/null 2>&1; then
   exit 2
 else
   MISSING=""
-  while IFS= read -r raw; do
+  while IFS= read -r raw || [ -n "$raw" ]; do
     # Normalize: strip surrounding whitespace, then skip blanks/comments —
     # a cosmetically-valid contract edit must not break consumer syncs.
     key="$(printf '%s' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
