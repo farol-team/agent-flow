@@ -47,7 +47,12 @@ Key properties:
   limited by a hook-enforced file manifest derived from the plan; no
   force-push/rebase (git hook).
 - **Verdicts require evidence**: no "should pass" anywhere in the chain —
-  fresh command output or it didn't happen.
+  fresh command output or it didn't happen. Acceptance findings must
+  quote the motivating line (unquotable → demoted to minor), and every
+  finding carries a stable fingerprint that meta tracks across
+  iterations: repeats are marked, ledgered minors aren't re-litigated,
+  and two identical gap sets in a row block the card early instead of
+  burning the last iteration.
 
 ## Repository layout
 
