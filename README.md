@@ -43,9 +43,13 @@ Key properties:
   `.claude/constitution.md`; every plan carries a per-article gate and
   the acceptance check re-verifies the diff. See
   `constitution-template.md` and `examples/constitution-rodnik-web.md`.
-- **Workers are sandboxed**: fresh `claude -p` in a git worktree, scope
-  limited by a hook-enforced file manifest derived from the plan; no
-  force-push/rebase (git hook).
+- **Workers are guardrailed** (not sandboxed): fresh `claude -p` in a
+  git worktree; a PreToolUse hook rejects edits outside the plan's file
+  manifest and another blocks history rewrites / self-merge. These
+  hooks catch a well-meaning worker drifting off-plan — they are NOT a
+  security boundary (a plain Bash file write never hits the scope hook,
+  and light obfuscation slips the git regexes); the acceptance check
+  re-enforces scope post-hoc. See "Threat model" below.
 - **Verdicts require evidence**: no "should pass" anywhere in the chain —
   fresh command output or it didn't happen. Acceptance findings must
   quote the motivating line (unquotable → demoted to minor), and every
@@ -72,7 +76,7 @@ kit/                    → copy into your repo's .claude/
                         the tested mechanical halves of /trello-run
 constitution-template.md → seed for your .claude/constitution.md
 examples/               a real, incident-driven project constitution
-docs/                   deeper docs (adoption guide, design notes)
+docs/                   design-notes.md + trello.example.json
 tests/                  kit self-checks (static invariants, run in CI)
 ```
 
@@ -86,6 +90,33 @@ tests/                  kit self-checks (static invariants, run in CI)
 - A Trello board with these lists: Icebox, Backlog, Triage in progress,
   Human Questions, Plan Proposed, Ready for AI, In Progress, Review,
   Blocked, Done.
+
+## Threat model (read before adopting)
+
+What the kit defends against, and what it deliberately does not:
+
+- **Defended: honest-mistake drift.** The scope/git hooks, the file
+  manifest, the acceptance re-check and the two-verdict audit exist to
+  catch a *well-meaning* worker going off-plan. That is the designed
+  failure mode, and the layers are redundant on purpose.
+- **NOT defended: a malicious card.** Card text, PLAN comments and PR
+  bodies are injected into worker/acceptance prompts, and workers run
+  with `--permission-mode bypassPermissions` inside the worktree. A card
+  authored by an attacker is a prompt injection with shell access.
+  **The Trello board is a trusted input** — restrict board membership to
+  people you'd give a shell.
+- **NOT defended: a malicious worker.** `git-guard`/`scope-guard` are
+  regex/manifest checks on tool-call arguments, and real bypasses are
+  trivial (verified): `scope-guard` matches only the edit tools, so a
+  Bash `echo hacked > file` writes anywhere unchecked; `git-guard`
+  greps the raw command string, so quote-splitting the flag
+  (`git push --for''ce`) walks past it. Treat the hooks as guardrails,
+  not containment. If you need containment, run `/trello-run` itself
+  inside a VM/container with a repo-scoped token.
+- **Blast radius**: a worker holds whatever credentials the worktree
+  environment exposes (`gh` token, env vars). Scope the token to the
+  target repos; never export unrelated secrets into the meta session
+  that spawns workers.
 
 ## Canonical source & staying in sync
 
