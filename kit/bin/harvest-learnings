@@ -42,21 +42,39 @@ touch "$FILE" 2>/dev/null || { echo "harvest-learnings: cannot write $FILE, skip
 
 TMP="$(mktemp)"
 cp "$FILE" "$TMP"
+
+# Per-line jq comparison (not grep -F, not whole-file jq): keys containing
+# JSON-escaped characters compare correctly, and a corrupt/foreign line —
+# realistic now that the file is committed and can carry merge-conflict
+# debris — is preserved untouched instead of aborting the rewrite mid-way.
+find_existing() { # key -> last parseable line with that key ('' if none)
+  local k="$1" l out=""
+  while IFS= read -r l; do
+    if printf '%s' "$l" | jq -e --arg k "$k" '.key? == $k' >/dev/null 2>&1; then out="$l"; fi
+  done < "$TMP"
+  printf '%s' "$out"
+}
+drop_key() { # key -> rewrite $TMP keeping every line EXCEPT parseable ones with that key
+  local k="$1" l
+  : > "$TMP.filtered"
+  while IFS= read -r l; do
+    if printf '%s' "$l" | jq -e --arg k "$k" '.key? == $k' >/dev/null 2>&1; then continue; fi
+    printf '%s\n' "$l" >> "$TMP.filtered"
+  done < "$TMP"
+  mv "$TMP.filtered" "$TMP"
+}
+
 while IFS= read -r entry; do
   key="$(printf '%s' "$entry" | jq -r '.key')"
   conf="$(printf '%s' "$entry" | jq -r '.confidence')"
-  existing="$(grep -F "\"key\":\"$key\"" "$TMP" | tail -1 || true)"
-  # grep -F prefilter can false-positive on substrings; confirm with jq.
-  if [ -n "$existing" ] && ! printf '%s' "$existing" | jq -e --arg k "$key" '.key == $k' >/dev/null 2>&1; then
-    existing=""
-  fi
+  existing="$(find_existing "$key")"
   if [ -z "$existing" ]; then
     printf '%s\n' "$entry" >> "$TMP"
     echo "harvested $key (new)"
   else
     oldconf="$(printf '%s' "$existing" | jq -r '.confidence // 0')"
     if jq -ne --argjson a "$conf" --argjson b "$oldconf" '$a > $b' >/dev/null 2>&1; then
-      jq -c --arg k "$key" 'select(.key != $k)' "$TMP" > "$TMP.filtered" && mv "$TMP.filtered" "$TMP"
+      drop_key "$key"
       printf '%s\n' "$entry" >> "$TMP"
       echo "harvested $key (replaced, $oldconf -> $conf)"
     else

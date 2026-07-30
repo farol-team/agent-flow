@@ -30,7 +30,7 @@ rsync -a --delete "$TMP/kit/kit/hooks/" "$ROOT/.claude/hooks/"
 chmod +x "$ROOT/.claude/hooks/"*.sh
 if [ -d "$TMP/kit/kit/bin" ]; then
   rsync -a --delete "$TMP/kit/kit/bin/" "$ROOT/.claude/bin/"
-  chmod +x "$ROOT/.claude/bin/"*
+  find "$ROOT/.claude/bin" -type f -exec chmod +x {} +
 fi
 
 if [ -f "$ROOT/.gilb/learnings.jsonl" ]; then
