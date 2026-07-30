@@ -31,11 +31,11 @@ Four forms, all run from a Claude Code session in the repo:
   sequentially.
 - `/trello-run <card-ref>` — process exactly one card in `Ready for AI`.
   `<card-ref>` accepts any of:
-  - `shortLink`, e.g. `6WV4zR2P`
-  - `<prefix>-<idShort>`, e.g. `GILB-3` (prefix from
+  - `shortLink`, e.g. `aBcDeF12`
+  - `<prefix>-<idShort>`, e.g. `ACME-3` (prefix from
     `.claude/trello.json` `card_prefix`)
-  - full Trello URL, e.g. `https://trello.com/c/6WV4zR2P` or
-    `https://trello.com/c/6WV4zR2P/3-gilb-3-mcp-endpoints`
+  - full Trello URL, e.g. `https://trello.com/c/aBcDeF12` or
+    `https://trello.com/c/aBcDeF12/3-acme-3-endpoints`
 
   If the resolved card is NOT in `Ready for AI` → reply
   `Card <ref> is not in Ready for AI (currently in <list>). Move it to Ready for AI first.`
@@ -76,9 +76,9 @@ Four forms, all run from a Claude Code session in the repo:
   `--parallel` is ignored with `--resume`.
 
 Combinations:
-- `/trello-run GILB-3` → exactly that card, sequential by construction.
+- `/trello-run ACME-3` → exactly that card, sequential by construction.
 - `/trello-run -p2` → all Ready cards, up to 2 in flight.
-- `/trello-run --parallel 3 GILB-3` → single card; flag ignored with a
+- `/trello-run --parallel 3 ACME-3` → single card; flag ignored with a
   warning line.
 
 ## Contract (what you must NOT do)
@@ -104,7 +104,8 @@ Combinations:
   improvising: `parse-verdict` (verdict extraction + fingerprints),
   `harvest-learnings`, `render-learnings`. Unit-tested in the kit repo
   (`tests/kit-bin.test.sh`).
-- `trello-workflow.md` — full workflow doc.
+- `trello-workflow.md` — optional project-owned workflow doc; absent
+  by default (this command is self-contained without it).
 - `CLAUDE.md` — commit style (worker reads it).
 - `.gilb/session-log.md` — recent automation history.
 - Project learnings file — `trello.json` `learnings` (default
@@ -870,6 +871,16 @@ For long-running cards, also write `STARTED` at the end of Phase 1 (gives
 visibility into in-flight work). Then the terminal event (`MERGED` /
 `REVIEW` / `BLOCKED`) replaces or follows.
 
+**Publish harvested learnings.** If this card's run appended or replaced
+entries in the learnings file, commit THAT FILE ONLY in the meta
+checkout: `git add <learnings-file> && git commit -m "chore(learnings):
+harvest from <card-short>"`, and push if the current branch is one meta
+may push to (follow the host repo's convention; otherwise leave the
+commit local, note it in chat, and fold it into the next PR or a
+dedicated learnings PR — do not let it sit). Memory that stays uncommitted is
+host-local and dies with the machine — the commit is what makes it
+project memory. Never bundle other dirty files into this commit.
+
 **Do not** remove the worktree. It stays for human inspection / re-iteration.
 
 ---
@@ -915,7 +926,8 @@ four phases with these deltas only — everything else is unchanged.
 Research's meta-repo worktree is just the `targets.meta` case of the general
 execution-target mechanism (Bootstrap step 2 + "Per card" target resolution):
 `research.target_repo` `"."` ≡ `targets.meta.repo_root`, `toolchain: docs`. The
-broader multi-board vision (several Trello boards → repos) remains GILB-31.
+broader multi-board vision (several Trello boards → repos) is
+deliberately deferred until a second board exists.
 
 ## Failure modes
 

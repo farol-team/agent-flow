@@ -28,7 +28,8 @@ lives in `.claude/prompts/card-eval.md`. The PLAN format lives in
   `split_confirmation_phrase`.
 - `.claude/prompts/card-eval.md` — per-card triage decision procedure.
 - `.claude/prompts/plan-format.md` — PLAN comment canonical format.
-- `trello-workflow.md` — full workflow doc.
+- `trello-workflow.md` — optional project-owned workflow doc; absent
+  by default (the kit commands are self-contained without it).
 - `.gilb/session-log.md` — recent automation history.
 - Project learnings file — `trello.json` `learnings` (default
   `.claude/learnings.jsonl`); card-eval.md step B reads it per card.
@@ -72,13 +73,13 @@ When confirmation found:
   - `desc`: the sub-task scope + a footer line `Split from: <original-card-url>`
   - `idLabels`: `[labels.ai_generated]`
 - For each newly-created card, immediately rename to add the `[<card_prefix>-<idShort>]`
-  prefix (e.g. `[GILB-23]`). The `idShort` is in the create-card response.
+  prefix (e.g. `[ACME-23]`). The `idShort` is in the create-card response.
   This keeps all cards on the board (human-created + AI-generated) on the
   same numbering scheme.
 - Post a `[meta] SPLIT EXECUTED` comment on the original card with links to
-  all new cards (use the `[GILB-N]` titles for readability).
+  all new cards (use the `[ACME-N]` titles for readability).
 - Archive the original card (`PUT /cards/<id>/closed` with `value=true`).
-- Append to session-log: `<ts> <card> SPLIT-EXECUTED | created N sub-cards: <comma-list of [GILB-N] ids>`.
+- Append to session-log: `<ts> <card> SPLIT-EXECUTED | created N sub-cards: <comma-list of [ACME-N] ids>`.
 
 Cap: if a card's TOO BIG proposal has more than 5 sub-tasks, abort (post
 `[meta] Refusing to split — more than 5 sub-tasks. Manual cleanup needed.`)
@@ -94,10 +95,10 @@ For each Backlog card **sequentially**:
 0. **Skip epic trackers.** If the card's title contains `epic.marker`
    (default `[epic]`, case-insensitive), skip it entirely — do not
    normalize, lock, triage, or move it. Epic cards are living overviews,
-   not work items (see `trello-workflow.md` → "Epics"). Leave them where
+   not work items. Leave them where
    they are.
 1. **Normalize title.** If the card's title doesn't start with
-   `[<card_prefix>-<idShort>]` (e.g. `[GILB-42]`), rename it to add the
+   `[<card_prefix>-<idShort>]` (e.g. `[ACME-42]`), rename it to add the
    prefix. Use the `idShort` field already in the card data.
    Cards created via Trello UI without the prefix get normalized here.
 2. Move card to `Triage in progress` (lock).
@@ -136,7 +137,7 @@ For each Backlog card **sequentially**:
 Epics are tracker cards (title contains `epic.marker`, default `[epic]`)
 that group member cards via an `<epic.label_prefix><name>` label (e.g.
 `epic:meeting-detection`). They are never triaged or executed. See
-`trello-workflow.md` → "Epics". This phase keeps them current.
+This phase keeps them current.
 
 **3a. Refresh checklists** (when `epic.auto_refresh_checklist` is true).
 For each `[epic]` card on the board:
@@ -158,8 +159,7 @@ that share the same `Split from: <url>` parent. If a cluster has
   numbering — epics stay outside it), apply the epic label, and build the
   `Children` checklist from the cluster.
 - Apply the epic label to each member card.
-- **Seed the completion-review card** (see `trello-workflow.md` →
-  "Completion review (every epic)"). Create a `Backlog` card named
+- **Seed the completion-review card.** Create a `Backlog` card named
   `Review completed <Name> epic (whole-epic code review + refactoring proposals)`,
   apply `[labels.ai_generated, <the epic label>]`, and — unlike the
   tracker — give it the normal `[<card_prefix>-<idShort>]` prefix (it is a

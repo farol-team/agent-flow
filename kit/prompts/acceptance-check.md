@@ -89,7 +89,8 @@ Clippy and fmt are NOT separate checks: they are commands inside
 crate touched). Check 4 runs them like any other Tests command. The
 old workspace-wide Check 5 / Check 6 were removed because they
 duplicated Check 4 and routinely flagged pre-existing drift in
-untouched crates as gaps — see GILB-10.
+untouched crates as gaps and burned an iteration on drift the card
+never touched.
 
 ## 1. Files coverage
 
@@ -182,7 +183,7 @@ article — the plan's own gate verdicts are claims, not evidence:
   still pass if the feature body were stubbed out? If obviously yes —
   finding (important).
 - Article II–V and every project article: check what the diff does
-  (e.g. rodnik-web: new job class → which `queue_as`? new query in a
+  (e.g. a multi-tenant Rails app: new job class → which `queue_as`? new query in a
   recurring job → windowed or full-table? any code path writing to the
   external CRM? new column on a shared table → mirrored into
   queue/cable schema dumps?).

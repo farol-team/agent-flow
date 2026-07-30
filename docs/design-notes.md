@@ -58,7 +58,10 @@ repo file. Meta is the single writer: it validates, dedups by `key`
 learnings file. Triage reads it when drafting PLANs; workers get the ≤5
 most relevant entries (file/dir overlap with the PLAN's `## Files`, or
 key-vs-title match) injected before touching code. Staleness = every
-anchored file gone from `git ls-files`.
+anchored file gone from `git ls-files`. The file is committed —
+`/trello-run` Phase 4 publishes each card's harvest as a
+`chore(learnings)` commit, because uncommitted memory is host-local
+and dies with the machine.
 
 **Limit.** Selection is a grep-class filter, not semantic search — a
 false positive costs the worker one read; a false negative loses nothing

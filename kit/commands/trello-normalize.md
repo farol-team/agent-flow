@@ -41,7 +41,7 @@ touch.
 ## Algorithm
 
 1. Read `.claude/trello.json`. Extract `board.id`, `card_prefix` (default
-   `"GILB"`), and `lists.icebox`.
+   `"ACME"`), and `lists.icebox`.
 2. Via MCP `trello`, fetch all cards on the board:
    ```
    GET /boards/<board-id>/cards/all?fields=name,idShort,closed,idList
