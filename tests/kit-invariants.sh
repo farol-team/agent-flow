@@ -44,10 +44,13 @@ done
 
 # ── 3. Config contract: keys the commands read exist in the example ───────
 # trello-run/trello-check read these top-level keys; a consumer copying the
-# example must get every one of them. Extend this list when a command grows
-# a new config dependency.
+# example must get every one of them. The list lives in
+# kit/config-contract.txt — shared with scripts/workflow-kit-sync, which
+# validates the consumer's REAL config after every sync. Extend the list
+# THERE when a command grows a new config dependency.
 
-REQUIRED_CONFIG_KEYS="board lists auto_merge_criteria research worker acceptance tdd_gate card_prefix branch_prefix default_target targets session_log learnings comment_prefixes"
+if [ -s kit/config-contract.txt ]; then pass; else fail "kit/config-contract.txt: missing or empty (source of the config contract)"; fi
+REQUIRED_CONFIG_KEYS="$(grep -vE '^[[:space:]]*(#|$)' kit/config-contract.txt || true)"
 for key in $REQUIRED_CONFIG_KEYS; do
   if jq -e --arg k "$key" 'has($k)' docs/trello.example.json >/dev/null 2>&1; then
     pass

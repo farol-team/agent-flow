@@ -163,6 +163,10 @@ the worker/critic/acceptance chain always runs on Claude Code.
 - `worker.model` / `acceptance.model`: per-stage model override (e.g. a
   cheaper model for acceptance).
 - `--parallel N` on `/trello-run`: up to 4 cards in flight.
+- `/trello-run --resume <card>`: continue a card whose meta session died
+  mid-run — per-card state is journaled to
+  `<worker_log_dir>/<card-short>-state.json` at every phase boundary
+  (worker spawn, parse, verdict, merge decision).
 
 ## Known origins
 

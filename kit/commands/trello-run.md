@@ -1,6 +1,6 @@
 ---
-description: Execute Ready for AI cards via worker iterations; auto-merge or escalate to Review. Accepts an optional single-card ref and an optional --parallel N flag.
-argument-hint: "[card-ref] [--parallel N]"
+description: Execute Ready for AI cards via worker iterations; auto-merge or escalate to Review. Accepts an optional single-card ref, --parallel N, and --resume <card-ref> for crash recovery.
+argument-hint: "[card-ref] [--parallel N] [--resume <card-ref>]"
 allowed-tools: Read, Glob, Grep, Edit, Write, Bash, mcp__trello
 ---
 
@@ -25,7 +25,7 @@ leave it for human `Review`.
 
 ## Invocation
 
-Three forms, all run from a Claude Code session in the repo:
+Four forms, all run from a Claude Code session in the repo:
 
 - `/trello-run` — process every card currently in `Ready for AI`,
   sequentially.
@@ -47,6 +47,33 @@ Three forms, all run from a Claude Code session in the repo:
   flag is `N=1` (sequential). The flag is allowed together with a
   card-ref, but for a single-card invocation it's a no-op (one card =
   at most one worker).
+
+- `/trello-run --resume <card-ref>` — continue a card whose run was
+  interrupted mid-card (meta session died, machine rebooted). Only for a
+  DEAD run: if the original meta session may still be alive, do not
+  resume — two metas double-drive the card (duplicate paid spawns,
+  duplicate comments). Requires BOTH: the card is in `In Progress`, and
+  its state file `<target.worker_log_dir>/<card-short>-state.json`
+  exists (see "State persistence" in Phase 2); otherwise exit with
+  `Nothing to resume for <ref>: <which precondition failed>.`
+  If the state file exists but is not valid JSON (torn write from the
+  crash itself) → exit with `State file for <ref> is unreadable —
+  inspect <path> and the worker logs manually.` No state change.
+  Meta reloads the state, verifies the worktree and branch still exist
+  (either missing → `Blocked` with `[meta] Resume failed: <what>. Manual
+  cleanup.`), re-fetches the prompt inputs the journal does not carry —
+  the `[meta] PLAN` comment and, for `iter > 1`, the `<gaps-list>` from
+  the last `[meta] Iteration` audit comment — from the card, then
+  re-enters at the recorded `next_action`:
+  `spawn_iter_1` → the Step 2.1a TDD-gate eligibility check (NOT
+  straight to Step 2.1 — a gated card must not silently lose its
+  spec-first path); `spawn_iter_<N≥2>` → Step 2.1 with `iter = N`;
+  `tdd_critic` → Step 2.1a.2; `tdd_impl` → Step 2.1a.4 (phase B,
+  `--resume` the journaled `session_id`); `acceptance` → Step 2.3;
+  `merge_decision` → Phase 3; `done` → report the last `iter_log`
+  outcome (the card reached a terminal decision; if its list disagrees,
+  the final Trello move failed — finish it manually) and exit.
+  `--parallel` is ignored with `--resume`.
 
 Combinations:
 - `/trello-run GILB-3` → exactly that card, sequential by construction.
@@ -90,6 +117,8 @@ Combinations:
    `jq is required by /trello-run. Install it first.`
 
 1. Parse the invocation (see `## Invocation`):
+   - Detect `--resume`. It requires a `<card-ref>` positional; `--resume`
+     without one → exit with `--resume requires a card ref.`
    - Detect `--parallel N` / `-p N` / `--p N` / `--pN` / `-pN`. Clamp to
      `[1, 4]`. Default `N=1`. Reject non-integer / out-of-range with
      `Invalid --parallel value: <raw>. Expected integer in [1, 4].` and
@@ -119,7 +148,9 @@ Combinations:
    specifically the contents of the `ready` list. From these:
    - **If `<card-ref>` was given:** resolve it (see "Card ref resolution"
      below). If the resolved card isn't in `ready` → exit per the
-     Invocation rules. Targets list = `[that card]`.
+     Invocation rules. Targets list = `[that card]`. (With `--resume` the
+     expected list is `in_progress` instead of `ready`, and the card
+     enters directly at its recorded `next_action` — Phase 1 is skipped.)
    - **Otherwise:** targets list = all cards currently in `ready`. If
      empty → reply "Ready for AI empty" and exit.
 5. Directories are created per resolved target in Phase 1.e
@@ -356,6 +387,10 @@ g. Move card to `In Progress`. Comment:
    PLAN confidence: <conf>/10, risk: <risk>, expected iters: <N>
    Iteration limit: 3
    ```
+   Then write the card's initial state journal with
+   `next_action: "spawn_iter_1"` (see "State persistence" in Phase 2) —
+   the iteration-1 worker run is the longest crash window and must be
+   covered before the spawn, not after its result is parsed.
 
 ---
 
@@ -371,6 +406,35 @@ In-memory state for this card:
 - `iter_log` = []  // list of dicts: {iter, outcome, gaps_count, gaps_summary, log_path}
 - `finding_history` = {}  // fingerprint → {first_iter, last_iter, times_in_gaps, status: open|fixed|ledgered}
 - `prev_gap_fps` = []  // gap fingerprints of the PREVIOUS iteration (for the no-progress check)
+
+**State persistence (crash recovery).** This state lives in meta's
+context; a dead meta session loses it while the worktree and PR live on.
+So meta journals the whole card state as one JSON object to
+`<target.worker_log_dir>/<card-short>-state.json` — all fields above plus
+`card_short`, `branch`, `worktree`, `base`, `pr_url`,
+`tdd_critic_rejected` (has the test critic already used its one
+rejection — so a resume at `tdd_critic` cannot grant a second respawn
+budget), and `next_action`.
+Write ATOMICALLY (write to `<path>.tmp`, then `mv` over) at each of
+these points, with the `next_action` that names the step a resume should
+re-enter:
+
+| after | `next_action` |
+|---|---|
+| Phase 1.g (card moved to In Progress) | `spawn_iter_1` |
+| Step 2.1a.1 (TDD phase-A result parsed) | `tdd_critic` |
+| Step 2.1a.4 (critic approved, before phase B) | `tdd_impl` |
+| Step 2.2 (worker result parsed OK) | `acceptance` |
+| Step 2.4 needs-fix decision | `spawn_iter_<N+1>` |
+| Step 2.4 accepted (before Phase 3) | `merge_decision` |
+| Phase 3 / Phase 4 finished (card moved to its final list) | `done` |
+
+`done` means the card actually reached its terminal list (Done / Review
+/ Blocked) — an accepted verdict alone is `merge_decision`, so a crash
+inside the auto-merge decision stays resumable. `/trello-run --resume
+<card-ref>` reloads this file (see Invocation). Writing is best-effort:
+a failed write never changes the iteration outcome — note it once in
+chat and continue.
 
 ### Step 2.1a — TDD gate (spec-first, conditional)
 
@@ -571,6 +635,14 @@ prefix for gaps). Entries with no parseable fingerprint are tolerated —
 they count as gaps/minors normally but do not participate in history
 tracking or the no-progress check (fail-open on format drift).
 
+Because every fail-open here silently disables the anti-loop machinery,
+count it: `fps_parsed` / `fps_total` over this verdict's `gaps[]` +
+`minor[]`. The counter is surfaced as a `Fingerprints: <parsed>/<total>`
+line in the Step 2.4 iteration comments — when parsed < total, that line
+is the only signal a human gets that history tracking is partially blind
+(a persistent gap between the two numbers means the acceptance prompt's
+output contract has drifted and needs fixing).
+
 **Learnings harvest.** If the parsed verdict has a `learnings` array
 (acceptance: max 2; test critic: max 1 — truncate excess), validate each
 entry: all of `type`/`key`/`insight`/`confidence`/`files` present,
@@ -600,6 +672,7 @@ First update `finding_history` from the parsed verdict:
   ```
   [meta] Iteration <iter>: ACCEPTED ✓
   Verdicts: spec=<verdicts.spec>, quality=<verdicts.quality>
+  Fingerprints: <fps_parsed>/<fps_total>
   Log: <result-json>
   ```
 - If `minor != []`, post ONE additional comment (the ledger — recorded,
@@ -620,8 +693,10 @@ fingerprint set is IDENTICAL to `prev_gap_fps` (nothing fixed, nothing
 new), the worker is not converging — a third pass over the same
 instructions will not help. Do not retry: treat this as the
 `iter == MAX_ITER` branch below (Blocked path), with the comment header
-`[meta] BLOCKED — no progress between iterations ✗` and an extra line
-`Identical gap set across iter <iter-1> and iter <iter>: <fingerprints>`.
+`[meta] BLOCKED — no progress between iterations ✗`, an extra line
+`Identical gap set across iter <iter-1> and iter <iter>: <fingerprints>`,
+iter_log outcome `no_progress` (not `max_iter_reached`), and Phase 4
+session-log form `BLOCKED | no progress, <N> gaps: <gaps_summary>`.
 If any entry lacks a fingerprint, skip this check (fail-open) and retry
 normally.
 
@@ -633,6 +708,7 @@ Otherwise:
   ` (REPEAT — unresolved since iter <first_iter>)`:
   ```
   [meta] Iteration <iter>: <N> gap(s), retrying
+  Fingerprints: <fps_parsed>/<fps_total>
 
   **Acceptance gaps:**
   1. <gap 1 — file/line/command>
@@ -659,6 +735,7 @@ Otherwise:
 - Move card to `Blocked`. Comment (full history):
   ```
   [meta] BLOCKED after <MAX_ITER> iterations ✗
+  Fingerprints: <fps_parsed>/<fps_total>
 
   **Iteration history:**
   - iter 1: <iter_log[0].outcome> — <gaps_count>: <gaps_summary>
@@ -852,3 +929,9 @@ broader multi-board vision (several Trello boards → repos) remains GILB-31.
 | `--parallel N` with `N` outside `[1, 4]` or non-integer | Exit with `Invalid --parallel value: <raw>. Expected integer in [1, 4].` |
 | `--parallel N` set but only one card in targets | Treat as `N=1`; no warning needed. |
 | Parallel run, one card hits `Blocked` | Other in-flight cards continue. Pending queue continues to drain. |
+| `--resume` but card not in `In Progress`, or no state file | Exit with `Nothing to resume for <ref>: <why>.` No state change. |
+| `--resume` and the state file is not valid JSON (torn write) | Exit: `State file unreadable — inspect manually.` No state change. |
+| `--resume` and worktree/branch from the state file are gone | Blocked: `Resume failed`. Manual cleanup; do not recreate silently. |
+| `--resume` a card whose original meta session is still alive | Undetectable by meta — the human must ensure the old run is dead first (two metas double-drive the card: duplicate spawns, duplicate comments). |
+| State says `done` but the card is still in `In Progress` | The final Trello move failed after the terminal decision. Report the last iter_log outcome; the human finishes the move. |
+| State-file write fails (disk, permissions) | Continue the iteration normally; note once in chat. Resume just won't be available for this card. |
