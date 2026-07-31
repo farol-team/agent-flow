@@ -128,7 +128,8 @@ Combinations:
    Read `tracker.provider` from `.claude/tracker.json` and read the
    provider doc `.claude/providers/<provider>.md` — it defines how every
    tracker operation (`list_items`, `read_item`, `create_item`,
-   `move_state`, `add_comment`, `set_labels`, `checklist`), the ref
+   `move_state`, `add_comment`, `set_labels`, `checklist`,
+   `archive_item`, `update_title`), the ref
    resolution and `<card-short>` work for this tracker. Missing config,
    unknown provider, or missing provider doc → stop with
    `Tracker provider '<name>' is not configured/supported. See .claude/providers/.`
@@ -240,7 +241,7 @@ Execution complete (parallelism N=<N>):
 ```
 
 For single-card invocation, replace `Cards processed: <count>` with the
-card title + shortLink.
+card title + short ref.
 
 ---
 
@@ -339,8 +340,8 @@ b. Parse PLAN per `.claude/prompts/plan-format.md`. Extract `## Metrics`:
    diff (Phase 2.3).
 
 c. Generate `<slug>` from card title: lowercase, replace `[^a-z0-9-]` with
-   `-`, collapse repeats, trim to 40 chars. `<card-short>` = first 8 chars
-   of `shortLink`.
+   `-`, collapse repeats, trim to 40 chars. `<card-short>` = per the provider
+   doc (Trello: first 8 chars of the shortLink; GitHub: `i<number>`).
 
 d. Branch: `<target.branch_prefix><card-short>-<slug>`. Worktree path:
    `<target.worktree_root>/<card-short>-<slug>` (meta-repo-relative, e.g.

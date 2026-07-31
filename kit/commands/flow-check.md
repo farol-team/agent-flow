@@ -102,8 +102,8 @@ For each Backlog card **sequentially**:
    not work items. Leave them where
    they are.
 1. **Normalize title.** If the card's title doesn't start with
-   `[<card_prefix>-<idShort>]` (e.g. `[ACME-42]`), rename it to add the
-   prefix. Use the `idShort` field already in the card data.
+   `[<card_prefix>-<N>]` (e.g. `[ACME-42]`), rename it to add the
+   prefix. Use the card's native id (`<N>`) from the card data.
    Cards created via the tracker UI without the prefix get normalized
    here (providers with `native_ids` skip title prefixes entirely — see
    the provider doc's Capabilities).
@@ -168,7 +168,7 @@ that share the same `Split from: <url>` parent. If a cluster has
 - **Seed the completion-review card.** Create a `Backlog` card named
   `Review completed <Name> epic (whole-epic code review + refactoring proposals)`,
   apply `[labels.ai_generated, <the epic label>]`, and — unlike the
-  tracker — give it the normal `[<card_prefix>-<idShort>]` prefix (it is a
+  tracker — give it the normal `[<card_prefix>-<N>]` prefix (it is a
   member work card, not the tracker). Its `desc` states the review scope
   (cross-cutting duplication, leaky abstractions, naming/contract drift
   between member PRs, deferred out-of-scope items to consolidate) and that

@@ -1,5 +1,5 @@
 ---
-description: Add [<prefix>-<idShort>] prefix to every card on the board that lacks it
+description: Add [<prefix>-<N>] prefix to every card on the board that lacks it
 allowed-tools: Read, Bash(gh:*), mcp__trello
 ---
 
@@ -7,7 +7,7 @@ allowed-tools: Read, Bash(gh:*), mcp__trello
 
 Role: **title-normalizer**. Standalone utility command. Scans all cards on
 the board (every column except `Icebox`, including archived if reachable)
-and adds the `[<card_prefix>-<idShort>]` prefix to any card whose title
+and adds the `[<card_prefix>-<N>]` prefix to any card whose title
 doesn't have it. `Icebox` is the human-only holding pen for raw ideas and
 is deliberately skipped — ideas get a prefix only once promoted to
 `Backlog`.
@@ -53,17 +53,17 @@ touch.
    (best-effort — an unarchived card without a prefix will simply be
    caught on the next run); note each card's state to skip `icebox`.
 3. For each card, in ascending native-id order:
-   - If the card's `idList` equals `states.icebox` → skip (raw idea, not yet
+   - If the card is in the `icebox` state → skip (raw idea, not yet
      promoted).
    - If the card's title contains `epic.marker` (default `[epic]`) → skip
      (epic tracker, stays outside the numbering scheme).
-   - Compose expected prefix: `[<card_prefix>-<idShort>] ` (with trailing space).
-   - If the card's current title already starts with `[<card_prefix>-<idShort>] `
+   - Compose expected prefix: `[<card_prefix>-<N>] ` (with trailing space).
+   - If the card's current title already starts with `[<card_prefix>-<N>] `
      → skip.
    - If the card's title starts with `[<card_prefix>-<other_number>] ` (i.e.
-     it was prefixed but the number doesn't match its current idShort — should
+     it was prefixed but the number doesn't match the card's current native id — should
      never happen, but defend) → report to chat as a warning and skip.
-   - Otherwise → rename to `[<card_prefix>-<idShort>] <current title>`.
+   - Otherwise → rename to `[<card_prefix>-<N>] <current title>`.
 4. Summary to chat:
    ```
    Normalized N cards (already correct: M, skipped due to mismatch: K).
