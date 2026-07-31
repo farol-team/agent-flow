@@ -19,7 +19,7 @@ or PR body, so optimise for scanability:
 - When citing source, use `path/to/file:line_number` so the reader
   can jump straight there.
 - When citing cards, use the card's short URL in the tracker
-  or the `[<prefix>-<idShort>]` form.
+  or the `[<prefix>-<N>]` form.
 - Follow the project's language convention (see `.claude/project-context.md`)
   for chat, commits, PR bodies, planning docs, and meta-authored tracker
   comments.
