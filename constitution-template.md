@@ -6,7 +6,7 @@ verdict per article: `pass` / `n/a` / `violates — <justification>`), and
 the acceptance check re-validates the actual DIFF after.
 
 Enforcement touchpoints:
-1. `/trello-check` (card-eval) — every code PLAN must contain a
+1. `/flow-check` (card-eval) — every code PLAN must contain a
    `## Constitution gate` section; a `violates` without justification
    fails self-check.
 2. Worker — the gate section is part of the PLAN contract.
@@ -61,7 +61,7 @@ HTTP APIs, paid services, clock).
      schema-dump mirroring). Aim for 3-7 articles per section; a
      constitution nobody can hold in their head stops being checked.
 
-     TARGET SCOPING (multi-repo boards): when trello.json defines several
+     TARGET SCOPING (multi-repo boards): when tracker.json defines several
      execution targets, split project articles into per-target sections —
      `## Project articles (<target-name>)`, names matching the `targets`
      keys — plus an optional `## Project articles (all targets)` for

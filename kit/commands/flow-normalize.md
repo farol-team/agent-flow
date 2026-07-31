@@ -1,6 +1,6 @@
 ---
 description: Add [<prefix>-<idShort>] prefix to every card on the board that lacks it
-allowed-tools: Read, Bash(gh:*), mcp__trello, mcp__linear
+allowed-tools: Read, Bash(gh:*), mcp__trello
 ---
 
 # /flow-normalize
@@ -45,16 +45,14 @@ touch.
 
 ## Algorithm
 
-1. Read `.claude/tracker.json`. Extract `board.id`, `card_prefix` (default
+1. Read `.claude/tracker.json`. Extract the board/repo identifiers from
+   the `tracker` block, `card_prefix` (default
    `"ACME"`), and `states.icebox`.
-2. Via the tracker (`list_items` across all states), fetch all cards:
-   ```
-   GET /boards/<board-id>/cards/all?fields=name,idShort,closed,idList
-   ```
-   Use `/cards/all` (not `/cards`) so archived cards are included; they may
-   become unarchived later and should already carry the prefix. `idList` is
-   needed to skip the `Icebox` column.
-3. For each card, in ascending `idShort` order:
+2. Via the tracker (`list_items` across all states), fetch all cards.
+   Include archived/closed cards where the provider's tooling allows it
+   (best-effort — an unarchived card without a prefix will simply be
+   caught on the next run); note each card's state to skip `icebox`.
+3. For each card, in ascending native-id order:
    - If the card's `idList` equals `states.icebox` → skip (raw idea, not yet
      promoted).
    - If the card's title contains `epic.marker` (default `[epic]`) → skip

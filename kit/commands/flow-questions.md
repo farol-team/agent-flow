@@ -1,6 +1,6 @@
 ---
 description: Interactively answer cards stuck in Human Questions via AskUserQuestion
-allowed-tools: Read, Glob, Grep, AskUserQuestion, Edit(.gilb/**), Write(.gilb/**), Bash(date:*), Bash(gh:*), mcp__trello, mcp__linear
+allowed-tools: Read, Glob, Grep, AskUserQuestion, Edit(.gilb/**), Write(.gilb/**), Bash(date:*), Bash(gh:*), mcp__trello
 ---
 
 # /flow-questions
@@ -100,7 +100,7 @@ For each included card, sequentially:
    defaults once the main fork is decided (see step 6).
 
 4. **Frame as `AskUserQuestion`.**
-   - `question`: `[<card_prefix>-<idShort>] ` + the question text,
+   - `question`: the card's short ref (`<prefix>-<N>`) + the question text,
      compressed to one line if needed. Add ≤1 sentence of repo-grounded
      context (where the choice lands, what depends on it).
    - `header`: ≤12 chars (e.g. `Whisper`, `Redesign`, `Helper IPC`).

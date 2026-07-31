@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # harvest-learnings — append validated learnings from a verdict to the
-# project learnings file. Mechanical half of trello-run's "Learnings
+# project learnings file. Mechanical half of flow-run's "Learnings
 # harvest" rule; meta stays the single writer by being the only caller.
 #
 # Usage: harvest-learnings <learnings-file> <card-short> <max> < verdict.json

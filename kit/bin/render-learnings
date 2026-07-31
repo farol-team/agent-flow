@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # render-learnings — select and render the learnings relevant to one card.
-# Mechanical half of trello-run's "Rendering <learnings>" rule.
+# Mechanical half of flow-run's "Rendering <learnings>" rule.
 #
 # Usage: render-learnings <learnings-file> <plan-files-file> <card-title>
 #   <plan-files-file>: newline-separated repo-relative paths from the

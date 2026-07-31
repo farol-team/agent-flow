@@ -1,7 +1,7 @@
 ---
 description: List finished-card worktrees and remove the ones the human confirms. The sanctioned cleanup path for "worktrees stay for inspection".
 argument-hint: ""
-allowed-tools: Read, Glob, Grep, Bash, mcp__trello, mcp__linear
+allowed-tools: Read, Glob, Grep, Bash, mcp__trello
 ---
 
 # /flow-clean
@@ -22,8 +22,11 @@ removes anything without an explicit per-run human confirmation.
    keep worktrees whose path lies under that target's `worktree_root`.
    Nothing found anywhere → reply `No kit worktrees found.` and exit.
 
-3. For each worktree, derive `<card-short>` from the directory name
-   (`<card-short>-<slug>`) and classify:
+3. For each worktree, derive `<card-short>` from the directory name:
+   the segment before the first `-` (worktree dirs are
+   `<card-short>-<slug>`, and `<card-short>` never contains a hyphen in
+   any provider — Trello: 8-char shortLink prefix; GitHub: `i<number>`).
+   Then classify:
    - **Card state** (tracker, per `.claude/providers/<provider>.md`):
      resolve the card from `<card-short>`.
      Card in `Done` → cleanup candidate. Card in `Blocked` / `Review` /

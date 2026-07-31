@@ -1,6 +1,6 @@
 ---
 description: Triage Backlog → Plan Proposed or Human Questions; execute confirmed splits
-allowed-tools: Read, Glob, Grep, WebFetch, Edit(.gilb/**), Write(.gilb/**), Bash(date:*), Bash(gh:*), mcp__trello, mcp__linear
+allowed-tools: Read, Glob, Grep, WebFetch, Edit(.gilb/**), Write(.gilb/**), Bash(date:*), Bash(gh:*), mcp__trello
 ---
 
 # /flow-check
@@ -48,7 +48,7 @@ lives in `.claude/prompts/card-eval.md`. The PLAN format lives in
    activity context.
 3. Via the tracker (`list_items`), fetch open cards from **all
    pipeline states except `icebox`** with at least
-   `{id, name, shortLink, idList, labels, badges}` — board snapshot for
+   `{id, title, short ref, state, labels}` — board snapshot for
    cross-card awareness. `Icebox` holds raw, unrefined ideas the user is
    not ready to develop; it is never triaged and never contributes
    cross-card context.
@@ -58,7 +58,7 @@ lives in `.claude/prompts/card-eval.md`. The PLAN format lives in
 Process cards in `Human Questions` looking for confirmed splits.
 
 For each card in `Human Questions`:
-- Fetch its full comments via MCP.
+- Fetch its full comments (`read_item`).
 - Look for the LATEST `[meta] TOO BIG — proposed split` comment (skip if
   none).
 - Look for a SUBSEQUENT human comment (no `[meta]`/`[worker]` prefix)
@@ -69,18 +69,20 @@ For each card in `Human Questions`:
 When confirmation found:
 - Parse the numbered sub-task list from the TOO BIG comment. Each item:
   `**<sub-task title>** — <one-line scope>`.
-- For each sub-task, create a new card via MCP:
-  - `idList`: Backlog
-  - `name`: the sub-task title (without `**` markdown)
-  - `desc`: the sub-task scope + a footer line `Split from: <original-card-url>`
-  - `idLabels`: `[labels.ai_generated]`
-- For each newly-created card, immediately rename to add the `[<card_prefix>-<idShort>]`
-  prefix (e.g. `[ACME-23]`). The `idShort` is in the create-card response.
-  This keeps all cards on the board (human-created + AI-generated) on the
-  same numbering scheme.
+- For each sub-task, create a new card (`create_item`):
+  - state: `backlog`
+  - title: the sub-task title (without `**` markdown)
+  - description: the sub-task scope + a footer line
+    `Split from: <original-card-url>`
+  - labels: `[labels.ai_generated]`
+- On providers WITHOUT `native_ids` (provider doc → Capabilities):
+  immediately `update_title` each new card to add the
+  `[<card_prefix>-<N>]` prefix (e.g. `[ACME-23]`, `<N>` from the create
+  response) so human-created and AI-generated cards share one numbering
+  scheme. Providers with native ids skip this — titles stay clean.
 - Post a `[meta] SPLIT EXECUTED` comment on the original card with links to
-  all new cards (use the `[ACME-N]` titles for readability).
-- Archive the original card (`PUT /cards/<id>/closed` with `value=true`).
+  all new cards (use their short refs for readability).
+- Archive the original card (`archive_item`, reason: split executed).
 - Append to session-log: `<ts> <card> SPLIT-EXECUTED | created N sub-cards: <comma-list of [ACME-N] ids>`.
 
 Cap: if a card's TOO BIG proposal has more than 5 sub-tasks, abort (post
@@ -140,7 +142,7 @@ For each Backlog card **sequentially**:
 
 Epics are tracker cards (title contains `epic.marker`, default `[epic]`)
 that group member cards via an `<epic.label_prefix><name>` label (e.g.
-`epic:meeting-detection`). They are never triaged or executed. See
+`epic:meeting-detection`). They are never triaged or executed.
 This phase keeps them current.
 
 **3a. Refresh checklists** (when `epic.auto_refresh_checklist` is true).

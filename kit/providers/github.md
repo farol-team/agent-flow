@@ -18,21 +18,25 @@ plain commands — compose with `--json` for parsing. `<repo>` below =
 
 | op | command template |
 |---|---|
-| `list_items(state)` | `gh issue list -R <repo> --label "<states.slot>" --state open --json number,title,labels,url` |
+| `list_items(state)` | `gh issue list -R <repo> --label "<states.slot>" --state open --limit 200 --json number,title,labels,url` — for the `done` state use `--state closed` (see done_semantics) |
 | `read_item(ref)` | `gh issue view <number> -R <repo> --json number,title,body,labels,url,state,comments` |
 | `create_item(state, title, desc, labels)` | `gh issue create -R <repo> --title "..." --body-file - --label "<states.slot>" [--label ...]` |
 | `move_state(ref, state)` | `gh issue edit <number> -R <repo> --add-label "<new>" --remove-label "<old>"`; for `done` additionally `gh issue close <number>`; moving OUT of done → `gh issue reopen` first |
 | `add_comment(ref, text)` | `gh issue comment <number> -R <repo> --body-file -` (full markdown — use it) |
 | `set_labels(ref, labels)` | `gh issue edit --add-label/--remove-label`; create missing labels with `gh label create -R <repo>` |
+| `archive_item(ref, reason)` | `gh issue close <number> -R <repo> --comment "<reason>"` and remove its `flow:*` label (an archived card must not answer any state query — a closed issue without `flow:done` is out of the pipeline) |
+| `update_title(ref, title)` | `gh issue edit <number> -R <repo> --title "..."` (rarely needed: native_ids means no prefix maintenance) |
 | `checklist(ref, name, items)` | no native checklists: maintain a markdown task list (`- [ ] item`) inside a `### <name>` section of the issue BODY via `gh issue edit --body-file -` (read-modify-write the whole body; touch only that section) |
 
 ## Ref resolution (in order)
 
 1. `^https?://github\.com/<owner>/<name>/issues/(\d+)$` → issue number
 2. `^#?(\d+)$` → issue number
-3. `^<card_prefix>-(\d+)$` (case-insensitive) → issue number (the
+3. `^i(\d+)$` → issue number (the `<card-short>` form — worktree dir
+   names and log files lead with it)
+4. `^<card_prefix>-(\d+)$` (case-insensitive) → issue number (the
    numeric part IS the issue number — GitHub ids are native)
-4. else → unrecognized ref
+5. else → unrecognized ref
 
 `<card-short>` (branch names, log/state filenames) = `i<number>`
 (e.g. `i142` — the number alone can collide with iteration suffixes in
@@ -52,7 +56,7 @@ filenames).
 ## One-time repo setup (adoption)
 
 ```sh
-for s in icebox backlog triage questions plan-proposed ready in-progress review blocked done; do
+for s in icebox backlog triage human-questions plan-proposed ready in-progress review blocked done; do
   gh label create "flow:$s" -R <repo> --color 5319e7 --force
 done
 gh label create ai-generated -R <repo> --color 0e8a16 --force

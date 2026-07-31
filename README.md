@@ -1,6 +1,6 @@
 # agent-workflow
 
-A tracker-driven, multi-agent development workflow for Claude Code —
+A board-driven, multi-agent development workflow for Claude Code —
 works with **Trello** (via MCP) or **GitHub Issues** (via `gh`, no MCP
 needed); other trackers are one provider descriptor away.
 A meta-agent triages cards into reviewable plans, a human approves by

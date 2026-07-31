@@ -34,7 +34,7 @@
     "auto_create_min_cluster": 3
   },
   "labels": {
-    "ai_generated": "<label id for the ai-generated label>"
+    "ai_generated": "ai-generated"
   },
   "worker": {
     "max_turns": 100,
@@ -53,7 +53,7 @@
   },
   "split_confirmation_phrase": "split confirmed",
   "card_prefix": "<PREFIX, e.g. ACME>",
-  "branch_prefix": "trello/",
+  "branch_prefix": "flow/",
   "default_target": "app",
   "repo_label_prefix": "repo:",
   "targets": {
@@ -61,7 +61,7 @@
       "repo_root": ".",
       "worktree_root": ".gilb/worktrees",
       "worker_log_dir": ".gilb/worker-logs",
-      "branch_prefix": "trello/",
+      "branch_prefix": "flow/",
       "toolchain": "<rust|rails|node|docs>",
       "test_cmd": "<e.g. bundle exec rspec <path> / cargo test -p <crate>>",
       "lint_cmd": "<e.g. bin/rubocop <path> / cargo clippy ...>"

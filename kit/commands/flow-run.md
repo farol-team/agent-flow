@@ -1,7 +1,7 @@
 ---
 description: Execute Ready for AI cards via worker iterations; auto-merge or escalate to Review. Accepts an optional single-card ref, --parallel N, and --resume <card-ref> for crash recovery.
 argument-hint: "[card-ref] [--parallel N] [--resume <card-ref>]"
-allowed-tools: Read, Glob, Grep, Edit, Write, Bash, mcp__trello, mcp__linear
+allowed-tools: Read, Glob, Grep, Edit, Write, Bash, mcp__trello
 ---
 
 # /flow-run

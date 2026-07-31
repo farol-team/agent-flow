@@ -62,7 +62,7 @@ if ! command -v jq >/dev/null 2>&1; then
 elif [ ! -f "$CONTRACT" ]; then
   echo "note: kit has no config-contract.txt at $KIT_REF — contract check skipped." >&2
 elif [ ! -f "$CONF" ]; then
-  echo "WARNING: no .claude/tracker.json yet — create it from docs/trello.example.json (adoption step 3)." >&2
+  echo "WARNING: no .claude/tracker.json yet — create it from docs/tracker.example.trello.json (adoption step 3)." >&2
 elif ! jq empty "$CONF" >/dev/null 2>&1; then
   echo "ERROR: .claude/tracker.json is not valid JSON — fix it, then re-run the contract check." >&2
   exit 2
@@ -79,7 +79,7 @@ else
     echo "" >&2
     echo "ERROR: .claude/tracker.json is missing required top-level keys:$MISSING" >&2
     echo "Kit commands read them. Add them before committing this sync" >&2
-    echo "(reference values: docs/trello.example.json in $KIT_REPO)." >&2
+    echo "(reference values: docs/tracker.example.trello.json in $KIT_REPO)." >&2
     exit 2
   fi
 fi

@@ -13,7 +13,11 @@ The Trello MCP server (tools under `mcp__trello__*`), e.g.
 configured with the board's API key/token. Pick the concrete tool by
 intent — the op table names the intent, not a hardcoded tool signature
 (MCP implementations differ slightly; any tool that performs the intent
-is correct). Never fall back to raw Trello REST/curl.
+is correct). Preferred tool names when the server offers them — keeps
+two meta runs from diverging: `get_cards_by_list_id`,
+`get_card` + `get_card_comments`, `add_card_to_list`, `move_card`,
+`add_comment`, `update_card_details` (title), `archive_card`, the
+checklist tools by name. Never fall back to raw Trello REST/curl.
 
 ## Operations
 
@@ -25,6 +29,8 @@ is correct). Never fall back to raw Trello REST/curl.
 | `move_state(ref, state)` | move the card to the target list |
 | `add_comment(ref, text)` | plain-text comment (no full markdown rendering — keep formatting simple) |
 | `set_labels(ref, labels)` | board labels; create missing ones first |
+| `archive_item(ref, reason)` | comment the reason, then archive (close) the card |
+| `update_title(ref, title)` | update the card's name (prefix maintenance for `/flow-normalize` and split sub-cards) |
 | `checklist(ref, name, items)` | native Trello checklists (create/update/tick) |
 
 ## Ref resolution (in order)
