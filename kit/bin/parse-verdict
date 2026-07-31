@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # parse-verdict — normalize a subagent verdict out of a Claude CLI JSON
-# envelope. Mechanical half of trello-run Step 2.3 / 2.1a: the orchestrator
+# envelope. Mechanical half of flow-run Step 2.3 / 2.1a: the orchestrator
 # (an LLM) should classify and decide, not regex-parse.
 #
 # Usage: parse-verdict acceptance <envelope.json>

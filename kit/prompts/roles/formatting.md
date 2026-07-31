@@ -14,7 +14,7 @@ Universal output rules. Apply on top of any other role.
 
 ## Output contract for workers spawned via `claude -p`
 
-When you are a worker driven by `/trello-run`, your FINAL response —
+When you are a worker driven by `/flow-run`, your FINAL response —
 delivered to meta as the `result` field of the CLI's
 `--output-format json` envelope — must be exactly one of these two
 lines and NOTHING else:

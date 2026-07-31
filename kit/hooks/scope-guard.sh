@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scope-guard.sh — PreToolUse hook (Edit|Write|MultiEdit|NotebookEdit) for
-# trello-flow workers. Provisioned by /trello-run Phase 1 into each card's
+# flow workers. Provisioned by /flow-run Phase 1 into each card's
 # worktree together with .claude/settings.local.json and
 # .claude/plan-allowed-files.txt (the manifest derived from the PLAN's
 # `## Files`).

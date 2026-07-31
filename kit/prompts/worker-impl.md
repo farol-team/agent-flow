@@ -26,7 +26,7 @@ Test-critic findings to keep in mind (non-blocking): <critic-findings>
        git push -u origin <branch>
 
 4. Open the PR via `gh` targeting `<base>`, body per `worker-iter1.md`
-   step 6 (first line `Trello: <card-url>`; sections `## What`,
+   step 6 (first line `Card: <card-url>`; sections `## What`,
    `## Why`, `## Test plan` with the actual commands you ran).
 5. Final response: `PR_URL=<url>` — or `BLOCKED: <reason>` per the
    worker-iter1 rules (same conditions, plus "an approved spec is

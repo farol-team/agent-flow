@@ -1,5 +1,5 @@
 {
-  "_comment": "trello-flow worker guardrails. /trello-run Phase 1 copies this file into each card worktree as .claude/settings.local.json (settings.local.json is the per-checkout layer; it never gets committed). The hook scripts are copied alongside into .claude/hooks/.",
+  "_comment": "flow worker guardrails. /flow-run Phase 1 copies this file into each card worktree as .claude/settings.local.json (settings.local.json is the per-checkout layer; it never gets committed). The hook scripts are copied alongside into .claude/hooks/.",
   "hooks": {
     "PreToolUse": [
       {

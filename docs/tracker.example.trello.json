@@ -1,11 +1,14 @@
 {
-  "board": {
-    "short_id": "<from board URL trello.com/b/<short_id>/...>",
-    "id": "<board id via API/MCP>",
-    "name": "<board name>",
-    "url": "https://trello.com/b/<short_id>/<slug>"
+  "tracker": {
+    "provider": "trello",
+    "board": {
+      "short_id": "<from board URL trello.com/b/<short_id>/...>",
+      "id": "<board id via API/MCP>",
+      "name": "<board name>",
+      "url": "https://trello.com/b/<short_id>/<slug>"
+    }
   },
-  "lists": {
+  "states": {
     "icebox": "<list id>",
     "backlog": "<list id>",
     "triage": "<list id>",
@@ -55,7 +58,7 @@
   },
   "split_confirmation_phrase": "split confirmed",
   "card_prefix": "<PREFIX, e.g. ACME>",
-  "branch_prefix": "trello/",
+  "branch_prefix": "flow/",
   "default_target": "app",
   "repo_label_prefix": "repo:",
   "targets": {
@@ -63,13 +66,15 @@
       "repo_root": ".",
       "worktree_root": ".gilb/worktrees",
       "worker_log_dir": ".gilb/worker-logs",
-      "branch_prefix": "trello/",
+      "branch_prefix": "flow/",
       "toolchain": "<rust|rails|node|docs>",
       "test_cmd": "<e.g. bundle exec rspec <path> / cargo test -p <crate>>",
       "lint_cmd": "<e.g. bin/rubocop <path> / cargo clippy ...>"
     }
   },
-  "project_context_docs": ["README.md"],
+  "project_context_docs": [
+    "README.md"
+  ],
   "session_log": ".gilb/session-log.md",
   "learnings": ".claude/learnings.jsonl",
   "comment_prefixes": {

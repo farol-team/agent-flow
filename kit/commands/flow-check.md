@@ -1,9 +1,9 @@
 ---
 description: Triage Backlog → Plan Proposed or Human Questions; execute confirmed splits
-allowed-tools: Read, Glob, Grep, WebFetch, Edit(.gilb/**), Write(.gilb/**), Bash(date:*), mcp__trello
+allowed-tools: Read, Glob, Grep, WebFetch, Edit(.gilb/**), Write(.gilb/**), Bash(date:*), Bash(gh:*), mcp__trello
 ---
 
-# /trello-check
+# /flow-check
 
 Role: **triage meta-agent**. Invoked manually by the user.
 
@@ -13,7 +13,7 @@ lives in `.claude/prompts/card-eval.md`. The PLAN format lives in
 
 ## Contract (what you must NOT do)
 
-- Do NOT spawn workers (that is `/trello-run`).
+- Do NOT spawn workers (that is `/flow-run`).
 - Do NOT write code in the repo. No commits. No PRs.
 - Do NOT move cards into `Ready for AI` — only the user does that.
 - Do NOT comment on cards without the `[meta] ` prefix.
@@ -24,14 +24,14 @@ lives in `.claude/prompts/card-eval.md`. The PLAN format lives in
 
 ## Sources of truth
 
-- `.claude/trello.json` — board, list IDs, conventions, `labels.ai_generated`,
+- `.claude/tracker.json` — board, list IDs, conventions, `labels.ai_generated`,
   `split_confirmation_phrase`.
 - `.claude/prompts/card-eval.md` — per-card triage decision procedure.
 - `.claude/prompts/plan-format.md` — PLAN comment canonical format.
-- `trello-workflow.md` — optional project-owned workflow doc; absent
+- `flow-workflow.md` — optional project-owned workflow doc; absent
   by default (the kit commands are self-contained without it).
-- `.gilb/session-log.md` — recent automation history.
-- Project learnings file — `trello.json` `learnings` (default
+- the session log (path: `session_log` in `tracker.json`, default `.gilb/session-log.md`) — recent automation history.
+- Project learnings file — `tracker.json` `learnings` (default
   `.claude/learnings.jsonl`); card-eval.md step B reads it per card.
 - `CLAUDE.md`, `spec.md`, `tauri-plan.md`, `research/*.md` — project context.
 
@@ -39,14 +39,16 @@ lives in `.claude/prompts/card-eval.md`. The PLAN format lives in
 
 ### Bootstrap (once)
 
-1. Read `.claude/trello.json` → get `board.id`, `lists.*`, `labels.ai_generated`,
+1. Read `.claude/tracker.json` → get `tracker.provider` (and read
+   `.claude/providers/<provider>.md` — it defines every tracker
+   operation below), the board/repo block, `states.*`, `labels.ai_generated`,
    `split_confirmation_phrase`, `session_log` path, and the `epic` block
    (`marker`, `label_prefix`, `auto_refresh_checklist`, `auto_create_min_cluster`).
-2. Read the last 30 lines of `.gilb/session-log.md` (skip header) — recent
+2. Read the last 30 lines of the session log (skip header) — recent
    activity context.
-3. Via MCP `trello`, fetch open cards from **all columns except `Icebox`**
-   (filter out cards whose `idList` equals `lists.icebox`) with at least
-   `{id, name, shortLink, idList, labels, badges}` — board snapshot for
+3. Via the tracker (`list_items`), fetch open cards from **all
+   pipeline states except `icebox`** with at least
+   `{id, title, short ref, state, labels}` — board snapshot for
    cross-card awareness. `Icebox` holds raw, unrefined ideas the user is
    not ready to develop; it is never triaged and never contributes
    cross-card context.
@@ -56,7 +58,7 @@ lives in `.claude/prompts/card-eval.md`. The PLAN format lives in
 Process cards in `Human Questions` looking for confirmed splits.
 
 For each card in `Human Questions`:
-- Fetch its full comments via MCP.
+- Fetch its full comments (`read_item`).
 - Look for the LATEST `[meta] TOO BIG — proposed split` comment (skip if
   none).
 - Look for a SUBSEQUENT human comment (no `[meta]`/`[worker]` prefix)
@@ -67,18 +69,20 @@ For each card in `Human Questions`:
 When confirmation found:
 - Parse the numbered sub-task list from the TOO BIG comment. Each item:
   `**<sub-task title>** — <one-line scope>`.
-- For each sub-task, create a new card via MCP:
-  - `idList`: Backlog
-  - `name`: the sub-task title (without `**` markdown)
-  - `desc`: the sub-task scope + a footer line `Split from: <original-card-url>`
-  - `idLabels`: `[labels.ai_generated]`
-- For each newly-created card, immediately rename to add the `[<card_prefix>-<idShort>]`
-  prefix (e.g. `[ACME-23]`). The `idShort` is in the create-card response.
-  This keeps all cards on the board (human-created + AI-generated) on the
-  same numbering scheme.
+- For each sub-task, create a new card (`create_item`):
+  - state: `backlog`
+  - title: the sub-task title (without `**` markdown)
+  - description: the sub-task scope + a footer line
+    `Split from: <original-card-url>`
+  - labels: `[labels.ai_generated]`
+- On providers WITHOUT `native_ids` (provider doc → Capabilities):
+  immediately `update_title` each new card to add the
+  `[<card_prefix>-<N>]` prefix (e.g. `[ACME-23]`, `<N>` from the create
+  response) so human-created and AI-generated cards share one numbering
+  scheme. Providers with native ids skip this — titles stay clean.
 - Post a `[meta] SPLIT EXECUTED` comment on the original card with links to
-  all new cards (use the `[ACME-N]` titles for readability).
-- Archive the original card (`PUT /cards/<id>/closed` with `value=true`).
+  all new cards (use their short refs for readability).
+- Archive the original card (`archive_item`, reason: split executed).
 - Append to session-log: `<ts> <card> SPLIT-EXECUTED | created N sub-cards: <comma-list of [ACME-N] ids>`.
 
 Cap: if a card's TOO BIG proposal has more than 5 sub-tasks, abort (post
@@ -98,9 +102,11 @@ For each Backlog card **sequentially**:
    not work items. Leave them where
    they are.
 1. **Normalize title.** If the card's title doesn't start with
-   `[<card_prefix>-<idShort>]` (e.g. `[ACME-42]`), rename it to add the
-   prefix. Use the `idShort` field already in the card data.
-   Cards created via Trello UI without the prefix get normalized here.
+   `[<card_prefix>-<N>]` (e.g. `[ACME-42]`), rename it to add the
+   prefix. Use the card's native id (`<N>`) from the card data.
+   Cards created via the tracker UI without the prefix get normalized
+   here (providers with `native_ids` skip title prefixes entirely — see
+   the provider doc's Capabilities).
 2. Move card to `Triage in progress` (lock).
 3. Apply the procedure in `.claude/prompts/card-eval.md`. It returns:
    - `outcome` ∈ {`PLAN`, `RESEARCH PLAN`, `QUESTIONS`, `SPLIT`}
@@ -120,7 +126,7 @@ For each Backlog card **sequentially**:
    - `RESEARCH PLAN` → `Plan Proposed`
    - `QUESTIONS` → `Human Questions`
    - `SPLIT` → `Human Questions`
-5. Append to `.gilb/session-log.md`:
+5. Append to the session log:
    ```
    <ISO UTC timestamp>  <card-short>  <EVENT>  | <summary>
    ```
@@ -136,7 +142,7 @@ For each Backlog card **sequentially**:
 
 Epics are tracker cards (title contains `epic.marker`, default `[epic]`)
 that group member cards via an `<epic.label_prefix><name>` label (e.g.
-`epic:meeting-detection`). They are never triaged or executed. See
+`epic:meeting-detection`). They are never triaged or executed.
 This phase keeps them current.
 
 **3a. Refresh checklists** (when `epic.auto_refresh_checklist` is true).
@@ -162,7 +168,7 @@ that share the same `Split from: <url>` parent. If a cluster has
 - **Seed the completion-review card.** Create a `Backlog` card named
   `Review completed <Name> epic (whole-epic code review + refactoring proposals)`,
   apply `[labels.ai_generated, <the epic label>]`, and — unlike the
-  tracker — give it the normal `[<card_prefix>-<idShort>]` prefix (it is a
+  tracker — give it the normal `[<card_prefix>-<N>]` prefix (it is a
   member work card, not the tracker). Its `desc` states the review scope
   (cross-cutting duplication, leaky abstractions, naming/contract drift
   between member PRs, deferred out-of-scope items to consolidate) and that
@@ -170,7 +176,7 @@ that share the same `Split from: <url>` parent. If a cluster has
   `Children` checklist like any member.
 - Post nothing on member cards; append session-log
   `<ts> EPIC-CREATED | <label> (<N> members, +review card [<prefix>-N])`.
-Cap: create at most ONE epic per `/trello-check` run; if multiple clusters
+Cap: create at most ONE epic per `/flow-check` run; if multiple clusters
 qualify, pick the largest and report the rest in chat. This is the only
 path where AI creates a non-split card — keep it conservative; when in
 doubt, suggest in chat instead of creating.
@@ -192,9 +198,9 @@ Triage complete:
 
 | Situation | Action |
 |---|---|
-| MCP `trello` not responding | Stop. Error to chat. Don't fall back to raw curl. |
-| `.claude/trello.json` malformed | Stop. Don't guess fields. |
-| `.gilb/session-log.md` missing | Create it (touch + header from existing template); proceed. |
+| Tracker (MCP/CLI) not responding | Stop. Error to chat. Don't fall back to raw REST/curl. |
+| `.claude/tracker.json` malformed | Stop. Don't guess fields. |
+| the session log missing | Create it (touch + header from existing template); proceed. |
 | `card-eval.md` not readable | Stop. Don't inline the procedure. |
 | Card creation fails (network, permission) | Stop. Card stays in its current state. Report. |
 | Trying to archive original after sub-cards created but archive fails | Sub-cards exist; manual cleanup. Comment in original card noting the partial state. |

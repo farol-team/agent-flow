@@ -38,12 +38,12 @@ done
 
 # ── 2. JSON artifacts parse ───────────────────────────────────────────────
 
-for f in kit/hooks/worker-settings.json docs/trello.example.json; do
+for f in kit/hooks/worker-settings.json docs/tracker.example.trello.json docs/tracker.example.github.json; do
   if jq empty "$f" 2>/dev/null; then pass; else fail "$f: invalid JSON"; fi
 done
 
 # ── 3. Config contract: keys the commands read exist in the example ───────
-# trello-run/trello-check read these top-level keys; a consumer copying the
+# flow-run/flow-check read these top-level keys; a consumer copying the
 # example must get every one of them. The list lives in
 # kit/config-contract.txt — shared with scripts/workflow-kit-sync, which
 # validates the consumer's REAL config after every sync. Extend the list
@@ -51,12 +51,37 @@ done
 
 if [ -s kit/config-contract.txt ]; then pass; else fail "kit/config-contract.txt: missing or empty (source of the config contract)"; fi
 REQUIRED_CONFIG_KEYS="$(grep -vE '^[[:space:]]*(#|$)' kit/config-contract.txt || true)"
-for key in $REQUIRED_CONFIG_KEYS; do
-  if jq -e --arg k "$key" 'has($k)' docs/trello.example.json >/dev/null 2>&1; then
-    pass
-  else
-    fail "docs/trello.example.json: missing top-level key '$key' (a kit command reads it)"
-  fi
+for ex in docs/tracker.example.trello.json docs/tracker.example.github.json; do
+  for key in $REQUIRED_CONFIG_KEYS; do
+    if jq -e --arg k "$key" 'has($k)' "$ex" >/dev/null 2>&1; then
+      pass
+    else
+      fail "$ex: missing top-level key '$key' (a kit command reads it)"
+    fi
+  done
+done
+
+# ── 3b. Tracker provider parity ───────────────────────────────────────────
+# flow-run hard-requires the provider doc at bootstrap; every provider doc
+# must define every semantic op the commands invoke, plus the two sections
+# meta reads (ref resolution, capabilities). A provider missing an op is a
+# runtime dead-end the prompts cannot detect.
+
+SEMANTIC_OPS="list_items read_item create_item move_state add_comment set_labels checklist archive_item update_title"
+PROVIDERS="$(ls kit/providers/*.md 2>/dev/null || true)"
+if [ -n "$PROVIDERS" ]; then pass; else fail "kit/providers/: no provider docs found"; fi
+for p in $PROVIDERS; do
+  for op in $SEMANTIC_OPS; do
+    if grep -q "${op}(" "$p"; then pass; else fail "$p: semantic op '$op' not defined"; fi
+  done
+  for section in "Ref resolution" "Capabilities"; do
+    if grep -q "^## $section" "$p"; then pass; else fail "$p: missing '## $section' section"; fi
+  done
+done
+# Every provider named by an example config ships a doc.
+for ex in docs/tracker.example.*.json; do
+  prov="$(jq -r '.tracker.provider' "$ex" 2>/dev/null)"
+  if [ -f "kit/providers/$prov.md" ]; then pass; else fail "$ex: provider '$prov' has no kit/providers/$prov.md"; fi
 done
 
 # ── 4. File references resolve ────────────────────────────────────────────
@@ -67,7 +92,7 @@ done
 
 REF_WHITELIST="prompts/ui-design.md"
 
-REFS=$(grep -rhoE '\.claude/(prompts|commands|hooks)/[A-Za-z0-9._/-]+\.(md|sh|json|txt)' kit README.md 2>/dev/null | sort -u)
+REFS=$(grep -rhoE '\.claude/(prompts|commands|hooks|providers)/[A-Za-z0-9._/-]+\.(md|sh|json|txt)' kit README.md 2>/dev/null | sort -u)
 for ref in $REFS; do
   rel="${ref#.claude/}"
   case " $REF_WHITELIST " in *" $rel "*) pass; continue ;; esac
@@ -75,7 +100,7 @@ for ref in $REFS; do
 done
 
 # ── 4b. Kit bin references resolve ────────────────────────────────────────
-# trello-run hard-requires `.claude/bin/<name>` at bootstrap (like role
+# flow-run hard-requires `.claude/bin/<name>` at bootstrap (like role
 # files); the scripts are extensionless so check 4's regex can't see them.
 # A renamed script would pass every other check and stop every consumer.
 
@@ -110,27 +135,27 @@ for f in kit/prompts/*.md; do
 done
 
 # ── 6. Verdict-contract parity ────────────────────────────────────────────
-# trello-run parses these keys out of subagent verdicts; the prompt that
+# flow-run parses these keys out of subagent verdicts; the prompt that
 # produces the verdict must mention every one, and vice versa is pinned by
 # the contract lines themselves. Catches one side of the contract moving.
 
 for key in gaps gaps_summary minor verdicts learnings; do
   if grep -q "\"$key\"" kit/prompts/acceptance-check.md; then pass; else
-    fail "acceptance-check.md: verdict key \"$key\" (parsed by trello-run) missing from the output contract"
+    fail "acceptance-check.md: verdict key \"$key\" (parsed by flow-run) missing from the output contract"
   fi
 done
 for key in verdict findings summary learnings; do
   if grep -q "\"$key\"" kit/prompts/test-critic.md; then pass; else
-    fail "test-critic.md: verdict key \"$key\" (parsed by trello-run) missing from the output contract"
+    fail "test-critic.md: verdict key \"$key\" (parsed by flow-run) missing from the output contract"
   fi
 done
 
 # The orchestrator must reference every key it is documented to parse.
 for key in gaps gaps_summary minor verdicts learnings; do
-  if grep -q "\`$key" kit/commands/trello-run.md || grep -q "\"$key\"" kit/commands/trello-run.md || grep -qE "(^|[^a-z_])${key}\[?\]?" kit/commands/trello-run.md; then
+  if grep -q "\`$key" kit/commands/flow-run.md || grep -q "\"$key\"" kit/commands/flow-run.md || grep -qE "(^|[^a-z_])${key}\[?\]?" kit/commands/flow-run.md; then
     pass
   else
-    fail "trello-run.md: never mentions verdict key '$key' it is supposed to parse"
+    fail "flow-run.md: never mentions verdict key '$key' it is supposed to parse"
   fi
 done
 
@@ -145,11 +170,11 @@ check_budget() { # file max
   if [ "$n" -le "$2" ]; then pass; else fail "$1: $n lines exceeds budget $2 (raise the budget consciously or trim)"; fi
 }
 
-check_budget kit/commands/trello-run.md        1100
-check_budget kit/commands/trello-check.md       300
-check_budget kit/commands/trello-questions.md   300
-check_budget kit/commands/trello-normalize.md   150
-check_budget kit/commands/trello-clean.md       110
+check_budget kit/commands/flow-run.md        1100
+check_budget kit/commands/flow-check.md       300
+check_budget kit/commands/flow-questions.md   300
+check_budget kit/commands/flow-normalize.md   150
+check_budget kit/commands/flow-clean.md       110
 check_budget kit/prompts/acceptance-check.md    470
 check_budget kit/prompts/card-eval.md           430
 check_budget kit/prompts/plan-format.md         320

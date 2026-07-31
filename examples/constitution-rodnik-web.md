@@ -6,7 +6,7 @@ starts, and the acceptance check re-validates the actual diff AFTER. An
 article violation without a documented justification blocks the card.
 
 Enforcement touchpoints:
-1. `/trello-check` (card-eval) — every code PLAN must contain a
+1. `/flow-check` (card-eval) — every code PLAN must contain a
    `## Constitution gate` section: one verdict per article
    (`pass` / `n/a` / `violates — <justification>`). A `violates` without
    justification → the plan fails self-check.

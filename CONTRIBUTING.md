@@ -30,6 +30,11 @@ CI runs both. Green locally = green in CI; there is no hidden step.
   step has one correct answer (parsing, dedup, selection), it belongs in
   a tested script the orchestrator calls. Add behavioral pins to
   `tests/kit-bin.test.sh` in the same PR.
+- **A new tracker = one provider descriptor** (`kit/providers/<name>.md`:
+  the seven semantic ops, ref resolution, capabilities + degradation
+  rules — see trello.md/github.md for the shape) plus an example config
+  (`docs/tracker.example.<name>.json`). The parity invariants will tell
+  you what's missing. Command files should not need to change.
 - **Verdict/PLAN contract changes must touch both sides** — the prompt
   that produces the format and the command/script that consumes it —
   in one PR. The parity checks will fail you otherwise, by design.

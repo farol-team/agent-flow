@@ -1,13 +1,13 @@
 # Worker prompt template — iteration 1
 
-Body for `/trello-run` to concatenate with `roles/engineering.md` and
+Body for `/flow-run` to concatenate with `roles/engineering.md` and
 `roles/formatting.md` before passing to `claude -p`. The body below
 focuses on workflow logic; persona, style, commit conventions, and the
 final-response contract live in the role files.
 
 Placeholders (replaced by meta before spawn):
-- `<card-url>` — Trello card short URL
-- `<branch>` — git branch name (`trello/<card-short>-<slug>`)
+- `<card-url>` — card URL in the tracker
+- `<branch>` — git branch name (`<branch_prefix><card-short>-<slug>`, e.g. `flow/ab12cd34-fix-x`)
 - `<base>` — base branch the PR targets (`main` unless the PLAN sets `Base:`)
 - `<PLAN-comment>` — the full `[meta] PLAN` comment text, as-is
 - `<learnings>` — meta-selected prior learnings relevant to this card's
@@ -15,7 +15,7 @@ Placeholders (replaced by meta before spawn):
 
 ---
 
-You are a worker for Trello card <card-url>. This is iteration 1.
+You are a worker for card <card-url>. This is iteration 1.
 
 The worktree contains meta-provisioned guardrail files —
 `.claude/settings.local.json`, `.claude/hooks/`,
@@ -69,7 +69,7 @@ with learning <key>` rather than improvising.
 6. Open the PR via `gh`, targeting the base branch `<base>`:
 
        gh pr create --base <base> --title "<short, from card title>" --body "$(cat <<'EOF'
-       Trello: <card-url>
+       Card: <card-url>
 
        ## What
        <2-3 sentences about the change>
@@ -100,8 +100,8 @@ response.
 
 - Do NOT spawn sub-agents via the Agent tool.
 - Do NOT use worktree isolation (you are ALREADY in a worktree).
-- Do NOT move the Trello card — meta does that based on your result.
-- Do NOT post to Trello — meta does that.
+- Do NOT move the card between states — meta does that based on your result.
+- Do NOT post to the tracker — meta does that.
 - Do NOT force-push, rebase, or amend (the git-guard hook blocks these).
 - Do NOT touch `main` or any other branch.
 - Do NOT commit or modify the meta-provisioned guardrail files

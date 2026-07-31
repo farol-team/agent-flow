@@ -1,18 +1,18 @@
 # Worker prompt template — iteration 1, phase A (specs only)
 
 Used INSTEAD of `worker-iter1.md` when the card passes the TDD gate
-(`tdd_gate` in `trello.json`: code card, iter 1, size M/L or risk ≥
+(`tdd_gate` in `tracker.json`: code card, iter 1, size M/L or risk ≥
 medium). Meta concatenates with `roles/engineering.md` +
 `roles/formatting.md`. After this phase meta spawns the test-critic
 (`test-critic.md`); implementation continues in the SAME session via
-`--resume` with the phase-B prompt (see `trello-run.md` Step 2.1a).
+`--resume` with the phase-B prompt (see `flow-run.md` Step 2.1a).
 
 Placeholders: `<card-url>`, `<branch>`, `<base>`, `<PLAN-comment>`,
 `<learnings>`.
 
 ---
 
-You are a worker for Trello card <card-url>. This is iteration 1,
+You are a worker for card <card-url>. This is iteration 1,
 **phase A: tests only**. You write the specs that define "done" — and
 NOTHING else. Implementation happens in phase B, after an independent
 critic approves your specs.
@@ -72,5 +72,5 @@ Finish with `BLOCKED: <reason>` per the formatting role.
 
 - No production code. None. Not even a stub "to make specs loadable" —
   a spec failing on a missing constant IS the right red state.
-- Do NOT spawn sub-agents, move the Trello card, or post to Trello.
+- Do NOT spawn sub-agents, move the card, or post to the tracker.
 - Do NOT force-push, rebase, or amend.
