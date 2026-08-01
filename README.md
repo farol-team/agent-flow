@@ -27,6 +27,7 @@ which one.
 ## The flow
 
 ```
+        [/flow-card] ↘
 Icebox → Backlog → [/flow-check] → Plan Proposed ─(human drags)→ Ready for AI
                        ↓ questions                                     ↓ [/flow-run]
                   Human Questions                              In Progress
@@ -47,6 +48,13 @@ Icebox → Backlog → [/flow-check] → Plan Proposed ─(human drags)→ Ready
 ```
 
 Key properties:
+- **Cards are authored, not dashed off**: `/flow-card <rough intention>`
+  grounds the sentence in the repo and asks — at most three questions —
+  only the gaps triage could not safely default, then writes a card
+  carrying a completion contract (goal / done-when / out-of-scope /
+  stop-if). Optional: a card written by hand works exactly as before,
+  it just pays for the `QUESTIONS → /flow-questions → re-triage`
+  round-trip when it's underspecified.
 - **Humans gate twice**: approving the plan (drag to Ready) and, when
   auto-merge criteria fail, reviewing the PR. Everything else is agents.
 - **Constitution**: project non-negotiables live in
@@ -78,7 +86,7 @@ Key properties:
 
 ```
 kit/                    → copy into your repo's .claude/
-  commands/             /flow-check, /flow-run (+ helpers) — the orchestrators
+  commands/             /flow-card, /flow-check, /flow-run (+ helpers) — the orchestrators
   prompts/              plan format, card triage, worker bodies (iter1/specs/impl/iterN),
                         test-critic, acceptance-check, roles/
   hooks/                scope-guard.sh, git-guard.sh, worker-settings.json
@@ -191,7 +199,8 @@ diff in the test file, not silent growth).
    first harvest — nothing to do here.
 5. Write `.claude/project-context.md`: stack, language conventions,
    commit format — workers read it before touching code.
-6. Smoke-test: put one small card in Backlog → run `/flow-check` →
+6. Smoke-test: put one small card in Backlog (by hand, or via
+   `/flow-card <one sentence>`) → run `/flow-check` →
    review the PLAN it posts → drag to Ready for AI → run `/flow-run` →
    watch the card land in Done/Review with an audit trail.
 

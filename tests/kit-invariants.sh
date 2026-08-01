@@ -173,6 +173,7 @@ check_budget() { # file max
 check_budget kit/commands/flow-run.md        1100
 check_budget kit/commands/flow-check.md       300
 check_budget kit/commands/flow-questions.md   300
+check_budget kit/commands/flow-card.md        270
 check_budget kit/commands/flow-normalize.md   150
 check_budget kit/commands/flow-clean.md       110
 check_budget kit/prompts/acceptance-check.md    470

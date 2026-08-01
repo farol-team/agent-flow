@@ -5,6 +5,40 @@ the failure mode that motivated it, and the deliberate limits of the
 design. Newest first. (The adoption guide lives in the README; the
 reference config is `docs/trello.example.json`.)
 
+## Authoring the card: ask at write time, not at triage time
+
+**Problem.** A rough card ("make the recorder not lose audio") is
+underspecified in exactly the ways triage detects and cannot fix alone.
+The pipeline handles it correctly and expensively: `/flow-check` posts
+`[meta] QUESTIONS`, the card moves to `Human Questions`, `/flow-questions`
+asks the human one question, the card returns to `Backlog`, `/flow-check`
+runs again. Three commands, two full board reloads, and — the real cost —
+the human answers hours later, having lost the context that made the
+intention obvious when they typed it.
+
+**Mechanism.** `/flow-card <rough intention>` moves that Q&A to the
+moment of authoring. It grounds the sentence in the repo first (files
+must exist now; matching `learnings.jsonl` pitfalls are read), then
+sorts the eight `card-eval.md` gap categories through the same
+auto-answer policy triage uses: safe defaults become `[meta] ASSUMED`
+comments, and only the genuinely human gaps (`What`, `Why`,
+`Dependencies`, split-implying `Size`) reach `AskUserQuestion` — at most
+three turns. The card it writes carries a completion contract: `## Goal`,
+`## Why`, `## Done when`, `## Out of scope`, `## Stop if`, `## Context`.
+No new config keys, no new state — the artifact is an ordinary Backlog
+card, and every downstream stage is unchanged.
+
+**Limit.** Deliberately not a second planner. It never writes an
+approach, a file manifest or test commands — the WHAT/HOW split and the
+human's plan-approval gate stay where they are. It creates exactly one
+card: an intention worth several PRs is narrowed to its first slice with
+the rest parked in `Icebox`, because `/flow-check`'s SPLIT path is the
+tested splitter and two of those would drift. The three-turn cap means a
+card can still reach triage with an open question — that's the intended
+overflow, not a failure: it lands as a `## Stop if` bullet and the old
+`QUESTIONS` route handles it. And nothing requires the command — a card
+typed straight into the board behaves exactly as it did before.
+
 ## Verification gate: quote the evidence or it's a minor
 
 **Problem.** LLM reviewers produce plausible-but-wrong findings
