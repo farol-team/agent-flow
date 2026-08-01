@@ -26,7 +26,11 @@ comments, and only the genuinely human gaps (`What`, `Why`,
 three turns. The card it writes carries a completion contract: `## Goal`,
 `## Why`, `## Done when`, `## Out of scope`, `## Stop if`, `## Context`.
 No new config keys, no new state — the artifact is an ordinary Backlog
-card, and every downstream stage is unchanged.
+card, and every downstream stage is unchanged. Nothing is written until
+the human has read the exact text: the composed card is shown in full and
+approved (or revised, repeatedly) before `create_item` runs, because
+after creation every wording fix costs a round-trip through the tracker
+UI.
 
 **Limit.** Deliberately not a second planner. It never writes an
 approach, a file manifest or test commands — the WHAT/HOW split and the

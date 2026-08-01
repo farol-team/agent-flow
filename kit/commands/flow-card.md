@@ -32,6 +32,9 @@ entered the board some other way.
   pre-empts both.
 - Do NOT create more than one card per invocation. If the intention is
   several PRs, see "Too big" below — splitting stays in `/flow-check`.
+- Do NOT create anything before the human has read the exact card text
+  (step 7). A card the human first sees on the board is a card they now
+  have to edit in the tracker UI.
 - Do NOT move any card into `Ready for AI` — only the user does that.
 - Do NOT run triage (`card-eval.md`), spawn workers, or touch git.
 - Do NOT use the `Agent` tool — this is a single interactive session.
@@ -133,7 +136,7 @@ idea. `/flow-check`'s SPLIT path stays the single tested splitter.
 
 Title: `<one-line imperative>`, prefixed with `research.marker` for a
 research card. No `[<card_prefix>-N]` yet — the number is the native id,
-which only exists after creation (step 7).
+which only exists after creation (step 8).
 
 Body:
 
@@ -145,8 +148,11 @@ Body:
 <the impact or incident that motivates it, 1–2 lines>
 
 ## Done when
-- <criterion an acceptance check can verify: observable behavior, not a
-  command — /flow-check turns these into the PLAN's ## Tests>
+- <proof, not effort: what an acceptance check can observe. Name an
+  existing verification when the repo has one — a suite, a lint rule, a
+  search that must return zero hits, a metric over a threshold — WITHOUT
+  prescribing the approach that gets there. /flow-check turns these into
+  the PLAN's ## Tests.>
 - <…>
 
 ## Out of scope
@@ -155,7 +161,10 @@ Body:
 ## Stop if
 - <a condition that invalidates the card: an assumption that turns out
   false, a pitfall from learnings, an open question. Meta or the worker
-  escalates instead of improvising.>
+  escalates instead of improvising — but only for a real impasse that
+  survives a retry. A first failing attempt, work that is merely large,
+  slow or unclear, and "this would benefit from clarification" are not
+  stop conditions.>
 
 ## Context
 - <path:line / doc / card ref — verified in step 2 to exist now>
@@ -171,7 +180,27 @@ Self-check before creating — every one is a defect if it fails:
 - Every `## Context` anchor was actually opened in step 2.
 - Research card: `## Out of scope` states "no production code".
 
-### 7. Create, number, label, log
+### 7. Show the exact text, then create
+
+Print the composed title and body **in full** — the text that will land
+on the board, not a paraphrase — and name the choices behind it: what
+you took as the finish line, what proves it, what you fenced off, what
+you assumed. Flag anything still soft.
+
+Then a final `AskUserQuestion`: `Create it` / `Revise` (fold the edits in
+and show the draft again — expect more than one round) / `Discard`. This
+turn does not count against the three-question budget in step 5: that
+budget is for resolving gaps, this is the approval gesture. Nothing is
+written to the tracker before the human has read the exact wording,
+because after creation every edit costs a round-trip through the tracker
+UI. On `Discard`, print the draft one last time so the work isn't lost,
+and create nothing.
+
+If the human wants the card looser than you'd recommend, say what the
+trade-off is once, then write their version. Don't relitigate it, and
+don't quietly re-tighten the wording on the next draft.
+
+### 8. Create, number, label, log
 
 1. `create_item(states.backlog, title, body, labels)` — or `icebox` per
    the escapes in step 5. Labels: `repo_label_prefix + <target>` when the
@@ -187,10 +216,10 @@ Self-check before creating — every one is a defect if it fails:
 
 ## Output
 
-Print the card ref and URL, the contract's `## Goal` and `## Done when`
-lines, the assumed defaults, and one next action — normally
-`Run /flow-check to triage <ref>` (or, for a parked card, what decision
-would unpark it).
+The contract itself was already shown in step 7 — don't reprint it. Close
+with the card ref and URL, the assumed defaults, and one next action:
+normally `Run /flow-check to triage <ref>` (or, for a parked card, what
+decision would unpark it).
 
 ## Failure modes
 
@@ -201,6 +230,7 @@ would unpark it).
 | `.claude/tracker.json` malformed or missing a key above | Stop. Don't guess field values. |
 | Intention names a file that doesn't exist | Don't ask about it — report it and ask whether the file is new or the name is wrong (that's a `What` gap). |
 | An open card already covers this | Report the ref, create nothing (step 3). |
+| Human picks `Discard`, or cancels the approval prompt | Treat both as discard: print the full draft so the work survives in the transcript, create nothing. |
 | Card created but `update_title`/label/comment fails | The card exists — report exactly which follow-up call failed and what to run manually. Never create a second card. |
 | Session log missing | Create it from the existing header template; proceed. Log the recovery in chat. |
 | Constitution forbids the intention as stated | Surface the article in the interview as the first question — a card that cannot pass the gate is not worth planning. |
