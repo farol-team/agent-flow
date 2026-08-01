@@ -79,6 +79,12 @@ into the card. Read the matching `learnings.jsonl` entries — a pitfall
 whose `files[]` overlap the likely scope belongs in `## Stop if` or
 `## Out of scope`, not in a question.
 
+Note the target's `test_cmd` / `lint_cmd` from `tracker.json`, and what
+the repo already uses to prove this kind of change (a suite path, a
+lint rule, a search that must come back empty). That is what `## Done
+when` names in step 6 — the card cannot ask for proof the author never
+went looking for.
+
 Detect the card type: research (`research.marker` — deliverable is a doc,
 gaps are question / decision-it-informs / boundary) or code. Epics
 (`epic.marker`) are out of scope for this command.
@@ -123,14 +129,19 @@ as a proper QUESTIONS gap. Three turns is the budget; an interview longer
 than that is a card that isn't ready to be written.
 
 **Escapes.** `Park in Icebox` on the decisive gap, or a cancelled
-`AskUserQuestion`: create the card in `icebox` instead of `backlog`, with
-whatever contract exists so far and a `[meta] PARKED` comment naming the
-undecided gap. Icebox is the human-only holding pen; nothing triages it.
+`AskUserQuestion`: the card is destined for `icebox` instead of
+`backlog`, carrying whatever contract exists so far and a `[meta] PARKED`
+comment naming the undecided gap. Icebox is the human-only holding pen;
+nothing triages it. This changes the destination, not the route — still
+compose (step 6) and still show the text for approval (step 7). A parked
+card is one the human will read months later, so it earns the same
+30 seconds of review as any other.
 
 **Too big.** If the intention is clearly several PRs, don't split it
 here. Say so, propose the first independently shippable slice, and offer
-it as the card being created — the rest goes to `icebox` as a one-line
-idea. `/flow-check`'s SPLIT path stays the single tested splitter.
+it as the card being created — the rest is a one-line `icebox` idea,
+shown for approval in step 7 alongside the card and created in step 8.
+`/flow-check`'s SPLIT path stays the single tested splitter.
 
 ### 6. Compose the card
 
