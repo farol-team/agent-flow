@@ -57,17 +57,28 @@ if [ -f "$ROOT/.gilb/learnings.jsonl" ]; then
   echo "note: found .gilb/learnings.jsonl — the kit default moved to .claude/learnings.jsonl (committed, so project memory travels with the repo). Move the file and update the 'learnings' key in tracker.json." >&2
 fi
 
+# What the kit-owned trees contain right now. `bin/kit-verify` recomputes it,
+# so an edit made here after a sync is visible before the next sync deletes it.
+# Computed BEFORE the file is opened for writing: inside the redirect a failed
+# `$(kit-digest)` loses its exit status to printf, and the sync would report
+# success over a `digest ` line with nothing after it.
+DIGEST_LINE=""
+if [ ! -x "$(dirname "$0")/kit-digest" ]; then
+  echo "note: bin/kit-digest not found — KIT_REVISION written without a digest, so bin/kit-verify cannot check this repo. Copy scripts/kit-digest + scripts/kit-verify from $KIT_REPO into bin/." >&2
+elif DIGEST="$("$(dirname "$0")/kit-digest" "$ROOT")" && [ -n "$DIGEST" ]; then
+  DIGEST_LINE="digest $DIGEST"
+else
+  # A digest tool that is present and broken is worth more noise than one that
+  # is absent: the consumer adopted the check and it silently is not checking.
+  echo "WARNING: bin/kit-digest failed — KIT_REVISION written without a digest. bin/kit-verify will report 'records a revision but no digest' until this is fixed." >&2
+fi
+
 {
   printf '%s %s %s\n' "$KIT_REPO" "$KIT_REF" "$REV"
-  # What the kit-owned trees contain right now. `bin/kit-verify` recomputes it,
-  # so an edit made here after a sync is visible before the next sync deletes
-  # it. Absent digest tool → record the revision without one and say so: the
-  # sync must not fail over a check the consumer has not adopted yet.
-  if [ -x "$(dirname "$0")/kit-digest" ]; then
-    printf 'digest %s\n' "$("$(dirname "$0")/kit-digest" "$ROOT")"
-  else
-    echo "note: bin/kit-digest not found — KIT_REVISION written without a digest, so bin/kit-verify cannot check this repo. Copy scripts/kit-digest + scripts/kit-verify from $KIT_REPO into bin/." >&2
-  fi
+  # An `[ -n … ] && printf` one-liner would end the group non-zero when the
+  # digest is absent, and `set -e` would abort the sync after the file is
+  # already written. Keep it an `if`.
+  if [ -n "$DIGEST_LINE" ]; then printf '%s\n' "$DIGEST_LINE"; fi
 } > "$ROOT/.claude/KIT_REVISION"
 
 echo "Kit synced from $KIT_REPO@$KIT_REF ($REV)."
