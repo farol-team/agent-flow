@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Print a digest of the kit-owned trees under .claude/.
+#
+# The kit is synced with `rsync --delete`, so anything edited there is deleted
+# by the next update with no diff to notice it by. The digest makes that edit
+# visible before the deletion instead of after it.
+#
+# Copied into a consumer repo as `bin/kit-digest`, next to `bin/kit-verify` and
+# `bin/workflow-kit-sync` — deliberately NOT into `.claude/bin/`, which is one
+# of the trees the sync wipes. A check the sync can delete is not a check.
+#
+# Usage: bin/kit-digest [repo-root]   (default: cwd)
+# Requires: bash, coreutils (find, sort, sha256sum).
+set -euo pipefail
+
+ROOT="$(cd "${1:-.}" && pwd)"
+
+# Exactly the trees `workflow-kit-sync` overwrites. Adding one here without
+# adding it there — or the reverse — is the drift this file exists to catch.
+KIT_OWNED="commands prompts hooks bin providers"
+
+# The kit ships this as a per-project file and excludes it from the sync, so it
+# is the consumer's to edit and must not count as tampering.
+NOT_KIT="prompts/ui-design.md"
+
+{
+  for tree in $KIT_OWNED; do
+    base="$ROOT/.claude/$tree"
+    [ -d "$base" ] || continue
+    # -print0 | sort -z: the digest is a property of the content, never of the
+    # order a filesystem happens to hand paths back in.
+    while IFS= read -r -d '' path; do
+      rel="${path#"$ROOT/.claude/"}"
+      case " $NOT_KIT " in *" $rel "*) continue ;; esac
+      printf '%s\0' "$rel"
+      # Whether a hook is executable decides whether it runs at all.
+      if [ -x "$path" ]; then printf 'x'; else printf -- '-'; fi
+      cat "$path"
+      printf '\0'
+    done < <(find "$base" -type f -print0 | sort -z)
+  done
+} | sha256sum | cut -d' ' -f1

@@ -88,7 +88,10 @@ constitution-template.md → seed for your .claude/constitution.md
 examples/               a real, incident-driven project constitution
   providers/            tracker descriptors: trello.md, github.md — how meta
                         performs the semantic ops on each tracker
-docs/                   design-notes.md + tracker.example.*.json
+scripts/                copied into a consumer's bin/ at adoption:
+                        workflow-kit-sync, kit-digest, kit-verify
+docs/                   design-notes.md + tracker.example.*.json +
+                        ci-kit-intact.example.yml
 tests/                  kit self-checks (static invariants, run in CI)
 ```
 
@@ -96,7 +99,8 @@ tests/                  kit self-checks (static invariants, run in CI)
 
 - Claude Code CLI (`claude`) with an API plan that allows spawning
   headless workers (`claude -p`).
-- `gh` (authenticated), `git`, `jq`.
+- `gh` (authenticated), `git`, `jq`, `rsync`, and coreutils
+  (`sha256sum`, for `bin/kit-verify`).
 - A task tracker, one of:
   - **Trello** — an MCP server exposing `mcp__trello__*` tools, e.g.
     [`@delorenj/mcp-server-trello`](https://github.com/delorenj/mcp-server-trello);
@@ -141,16 +145,29 @@ What the kit defends against, and what it deliberately does not:
 **This repo is the canonical source of the kit.** Consumers do not edit
 kit files in their own repo — they edit HERE (PR to this repo), then pull:
 
-1. Copy `scripts/workflow-kit-sync` into your repo (e.g. `bin/`) once,
-   during adoption.
+1. Copy `scripts/workflow-kit-sync`, `scripts/kit-digest` and
+   `scripts/kit-verify` into your repo's `bin/` once, during adoption.
+   They live there rather than in `.claude/bin/` on purpose: that tree is
+   one of the ones the sync deletes, and a check the sync can delete is
+   not a check. (They are copied, never synced — `workflow-kit-sync`
+   reports when your copies have fallen behind this repo.)
 2. Run `bin/workflow-kit-sync` to pull the latest kit. It overwrites
    `.claude/{commands,prompts,hooks,bin,providers}` (deletions propagate), never touches
    project-owned files (`tracker.json`, `constitution.md`,
    `project-context.md`, `settings.local.json`, the committed
    `learnings.jsonl` memory, optional `prompts/ui-design.md`), and
-   records the kit SHA in
+   records the kit SHA **and a digest of the kit-owned trees** in
    `.claude/KIT_REVISION`.
 3. Review the diff, commit.
+4. Wire `bin/kit-verify` into CI (`docs/ci-kit-intact.example.yml`). The
+   rule above — consumers don't edit kit files in their own repo — is
+   otherwise just prose: the sync's `rsync --delete` erases a local edit
+   with no diff to notice it by, so you learn about it when it vanishes.
+   `kit-verify` recomputes the digest and fails the pull request while
+   the edit still exists, naming the three ways out (send it upstream,
+   move the file out of the kit-owned trees, or re-sync deliberately).
+   `bin/kit-verify --selftest` proves on every run that the check can go
+   red — it tampers with a synthetic kit and asserts the failure.
 
 First production consumers: two private repos of the original project (a
 Rails web app and a Rust/Tauri desktop app), synced through this exact

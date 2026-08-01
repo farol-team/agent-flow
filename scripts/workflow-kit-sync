@@ -16,7 +16,7 @@
 # committing.
 set -euo pipefail
 
-KIT_REPO="${KIT_REPO:-farol-team/agent-workflow}"
+KIT_REPO="${KIT_REPO:-farol-team/agent-flow}"
 KIT_REF="${KIT_REF:-main}"
 ROOT="$(git rev-parse --show-toplevel)"
 TMP="$(mktemp -d)"
@@ -37,6 +37,18 @@ if [ -d "$TMP/kit/kit/providers" ]; then
   rsync -a --delete "$TMP/kit/kit/providers/" "$ROOT/.claude/providers/"
 fi
 
+# The bin/ scripts are copied once at adoption and never synced — they have to
+# live outside the trees this script deletes. Nothing else would ever say they
+# fell behind, so say it here.
+for s in workflow-kit-sync kit-digest kit-verify; do
+  [ -f "$TMP/kit/scripts/$s" ] || continue
+  if [ ! -f "$ROOT/bin/$s" ]; then
+    echo "note: bin/$s is missing — copy it from $KIT_REPO scripts/$s and chmod +x (adoption step 1)." >&2
+  elif ! cmp -s "$TMP/kit/scripts/$s" "$ROOT/bin/$s"; then
+    echo "note: bin/$s differs from $KIT_REPO@$KIT_REF scripts/$s — copied at adoption, never synced. Diff it and update deliberately." >&2
+  fi
+done
+
 if [ -f "$ROOT/.claude/trello.json" ] && [ ! -f "$ROOT/.claude/tracker.json" ]; then
   echo "note: found .claude/trello.json — the kit config moved to .claude/tracker.json (tracker-agnostic): rename it, wrap the board block as {\"tracker\":{\"provider\":\"trello\",\"board\":{...}}} and rename \"lists\" to \"states\" (see docs/tracker.example.trello.json in $KIT_REPO)." >&2
 fi
@@ -45,7 +57,18 @@ if [ -f "$ROOT/.gilb/learnings.jsonl" ]; then
   echo "note: found .gilb/learnings.jsonl — the kit default moved to .claude/learnings.jsonl (committed, so project memory travels with the repo). Move the file and update the 'learnings' key in tracker.json." >&2
 fi
 
-printf '%s %s %s\n' "$KIT_REPO" "$KIT_REF" "$REV" > "$ROOT/.claude/KIT_REVISION"
+{
+  printf '%s %s %s\n' "$KIT_REPO" "$KIT_REF" "$REV"
+  # What the kit-owned trees contain right now. `bin/kit-verify` recomputes it,
+  # so an edit made here after a sync is visible before the next sync deletes
+  # it. Absent digest tool → record the revision without one and say so: the
+  # sync must not fail over a check the consumer has not adopted yet.
+  if [ -x "$(dirname "$0")/kit-digest" ]; then
+    printf 'digest %s\n' "$("$(dirname "$0")/kit-digest" "$ROOT")"
+  else
+    echo "note: bin/kit-digest not found — KIT_REVISION written without a digest, so bin/kit-verify cannot check this repo. Copy scripts/kit-digest + scripts/kit-verify from $KIT_REPO into bin/." >&2
+  fi
+} > "$ROOT/.claude/KIT_REVISION"
 
 echo "Kit synced from $KIT_REPO@$KIT_REF ($REV)."
 echo "Changes (empty = already in sync):"

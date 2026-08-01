@@ -223,6 +223,25 @@ NOREPO="$WORK/norepo"; mkdir -p "$NOREPO"
 OUT="$(cd "$NOREPO" && "$BIN/render-learnings" "$LF2" "$WORK/plan-files" "t" 2>/dev/null)"
 expect_eq "render no-git: staleness skipped, matches survive" "$(printf '%s\n' "$OUT" | grep -c 'queue-choice')" "1"
 
+# ── kit-verify: the consumer-side tamper check ────────────────────────────
+# Its --selftest builds a synthetic kit, tampers with it, and asserts the
+# failure — so running it here is the behavioral pin for both scripts.
+
+OUT="$(bash "$ROOT/scripts/kit-verify" --selftest 2>&1)"; RC=$?
+expect_exit "kit-verify selftest: exit" "$RC" 0
+expect_eq "kit-verify selftest: reports both tamper cases" \
+  "$(printf '%s\n' "$OUT" | grep -c 'selftest ok')" "1"
+
+# A tree with no digest line is a distinct failure from a wrong digest —
+# a consumer that synced with an older script must be told to re-sync.
+NOD="$WORK/nodigest"; mkdir -p "$NOD/.claude/commands"
+printf 'x\n' > "$NOD/.claude/commands/a.md"
+printf 'kit main abc1234\n' > "$NOD/.claude/KIT_REVISION"
+OUT="$(cd "$NOD" && bash "$ROOT/scripts/kit-verify" 2>&1)"; RC=$?
+expect_exit "kit-verify no-digest: exit" "$RC" 1
+expect_eq "kit-verify no-digest: says re-run the sync" \
+  "$(printf '%s\n' "$OUT" | grep -c 'no digest')" "1"
+
 # ── Summary ───────────────────────────────────────────────────────────────
 
 echo ""
