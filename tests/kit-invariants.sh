@@ -184,6 +184,7 @@ check_budget kit/prompts/worker-iterN.md        140
 check_budget kit/prompts/worker-specs.md        110
 check_budget kit/prompts/worker-impl.md          60
 check_budget kit/prompts/worker-research.md     130
+check_budget kit/prompts/roles/untrusted-input.md 60
 
 # ── 8. Hook JSON output shape ─────────────────────────────────────────────
 # scope-guard blocks via exit 2 + stderr; any JSON it emits on stdout must

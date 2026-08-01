@@ -122,7 +122,15 @@ What the kit defends against, and what it deliberately does not:
   with `--permission-mode bypassPermissions` inside the worktree. A card
   authored by an attacker is a prompt injection with shell access.
   **The tracker is a trusted input** — restrict board/repo write access
-  to people you'd give a shell.
+  to people you'd give a shell. *Partial mitigation:* meta wraps every
+  externally-authored substitution in an `<untrusted src="…">` block and
+  `prompts/roles/untrusted-input.md` (concatenated into every worker,
+  critic and acceptance prompt) states what such a block may not do —
+  grant permissions, lift a guardrail, redirect the final-response
+  contract, reach for secrets or unnamed hosts — and turns an attempt
+  into a `BLOCKED` / CRITICAL-gap finding instead of compliance. That
+  raises the cost of the careless case; it is prompt-enforced framing,
+  not containment, and it does not change the trust assumption above.
 - **NOT defended: a malicious worker.** `git-guard`/`scope-guard` are
   regex/manifest checks on tool-call arguments, and real bypasses are
   trivial (verified): `scope-guard` matches only the edit tools, so a
