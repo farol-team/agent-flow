@@ -132,6 +132,39 @@ ENV="$(mk_envelope "$WORK/r6c")"
 "$BIN/parse-verdict" critic "$ENV" >/dev/null 2>&1; RC=$?
 expect_exit "critic garbage types: exit" "$RC" 4
 
+# 6d. Invalid JSON escapes from quoted source code (agent-flow#13): a critic
+# quoting a template literal emits \` and \$ — illegal escapes that fail every
+# strict parser. The verdict is substantively fine; parse-verdict repairs by
+# dropping the backslash and the payload keeps the raw characters.
+cat > "$WORK/r6d" <<'EOF'
+Walkthrough prose the model wrote first.
+{"verdict":"approved","findings":["NIT: say(\`${made.name} is yours\`) has no seam-level example"],"summary":"fine after repair","learnings":[]}
+EOF
+ENV="$(mk_envelope "$WORK/r6d")"
+OUT="$("$BIN/parse-verdict" critic "$ENV")"; RC=$?
+expect_exit "critic invalid-escape repair: exit" "$RC" 0
+expect_eq "critic repair: verdict" "$(printf '%s' "$OUT" | jq -r '.verdict')" "approved"
+expect_eq "critic repair: backticks survive as content" "$(printf '%s' "$OUT" | jq -r '.findings[0]' | tr -cd '\140' | wc -c | tr -d ' ')" "2"
+expect_eq "critic repair: dollar survives" "$(printf '%s' "$OUT" | jq -r '.findings[0]' | grep -c '${made.name}')" "1"
+
+# 6e. Repair applies to acceptance mode too, and valid escapes are untouched.
+cat > "$WORK/r6e" <<'EOF'
+{"gaps":["CRITICAL [c1:src/a.rs:tpl]: code says \`x\` and \"y\" and a\\b"],"gaps_summary":"tpl","minor":[]}
+EOF
+ENV="$(mk_envelope "$WORK/r6e")"
+OUT="$("$BIN/parse-verdict" acceptance "$ENV")"; RC=$?
+expect_exit "acceptance invalid-escape repair: exit" "$RC" 0
+expect_eq "acceptance repair: fp intact" "$(printf '%s' "$OUT" | jq -r '._fingerprints.gaps[0]')" "c1:src/a.rs:tpl"
+expect_eq "acceptance repair: valid escapes kept" "$(printf '%s' "$OUT" | jq -r '.gaps[0]' | grep -c '"y"')" "1"
+expect_eq "acceptance repair: escaped backslash kept" "$(printf '%s' "$OUT" | jq -r '.gaps[0]' | grep -c 'a\\b')" "1"
+
+# 6f. A line that stays broken after repair is still exit 4 — repair is not
+# a license to accept garbage.
+printf '{"verdict":"approved","findings":[unquoted]}\n' > "$WORK/r6f"
+ENV="$(mk_envelope "$WORK/r6f")"
+"$BIN/parse-verdict" critic "$ENV" >/dev/null 2>&1; RC=$?
+expect_exit "critic unrepairable: exit" "$RC" 4
+
 # ── harvest-learnings ─────────────────────────────────────────────────────
 
 LF="$WORK/learnings.jsonl"
@@ -222,6 +255,25 @@ expect_eq "render: lowest-confidence dropped" "$(printf '%s\n' "$OUT" | grep -c 
 NOREPO="$WORK/norepo"; mkdir -p "$NOREPO"
 OUT="$(cd "$NOREPO" && "$BIN/render-learnings" "$LF2" "$WORK/plan-files" "t" 2>/dev/null)"
 expect_eq "render no-git: staleness skipped, matches survive" "$(printf '%s\n' "$OUT" | grep -c 'queue-choice')" "1"
+
+# ── kit-verify: the consumer-side tamper check ────────────────────────────
+# Its --selftest builds a synthetic kit, tampers with it, and asserts the
+# failure — so running it here is the behavioral pin for both scripts.
+
+OUT="$(bash "$ROOT/scripts/kit-verify" --selftest 2>&1)"; RC=$?
+expect_exit "kit-verify selftest: exit" "$RC" 0
+expect_eq "kit-verify selftest: reports both tamper cases" \
+  "$(printf '%s\n' "$OUT" | grep -c 'selftest ok')" "1"
+
+# A tree with no digest line is a distinct failure from a wrong digest —
+# a consumer that synced with an older script must be told to re-sync.
+NOD="$WORK/nodigest"; mkdir -p "$NOD/.claude/commands"
+printf 'x\n' > "$NOD/.claude/commands/a.md"
+printf 'kit main abc1234\n' > "$NOD/.claude/KIT_REVISION"
+OUT="$(cd "$NOD" && bash "$ROOT/scripts/kit-verify" 2>&1)"; RC=$?
+expect_exit "kit-verify no-digest: exit" "$RC" 1
+expect_eq "kit-verify no-digest: says re-run the sync" \
+  "$(printf '%s\n' "$OUT" | grep -c 'no digest')" "1"
 
 # ── Summary ───────────────────────────────────────────────────────────────
 

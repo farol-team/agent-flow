@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# Check that .claude/ still holds the kit revision it says it holds.
+#
+#     bin/kit-verify              # verify this checkout (run from the repo root)
+#     bin/kit-verify --selftest   # prove the check can fail
+#
+# Exit 0 when the kit is intact, 1 when it is not. Belongs in CI on every pull
+# request — the one place a check cannot be skipped by not running a command.
+#
+# Lives in `bin/`, not `.claude/bin/`: the latter is wiped by the sync.
+# Requires: bash, coreutils. Reads `bin/kit-digest` from its own directory.
+set -uo pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+KIT_DIGEST="$HERE/kit-digest"
+REVISION=".claude/KIT_REVISION"
+
+[ -x "$KIT_DIGEST" ] || { echo "kit-verify: $KIT_DIGEST missing or not executable." >&2; exit 1; }
+
+verify() { # root
+  local root="$1" path source recorded actual
+  path="$root/$REVISION"
+  if [ ! -f "$path" ]; then
+    cat >&2 <<EOF
+$REVISION is missing.
+Nothing records which revision of the workflow this repository holds.
+Run bin/workflow-kit-sync to install it.
+EOF
+    return 1
+  fi
+  source="$(grep -v '^[[:space:]]*$' "$path" | head -1)"
+  recorded="$(sed -n 's/^digest[[:space:]]\{1,\}//p' "$path" | head -1)"
+  if [ -z "$recorded" ]; then
+    echo "$REVISION records a revision but no digest — re-run bin/workflow-kit-sync." >&2
+    return 1
+  fi
+  actual="$("$KIT_DIGEST" "$root")"
+  if [ "$actual" = "$recorded" ]; then
+    echo "kit intact — $source"
+    return 0
+  fi
+  cat >&2 <<EOF
+The workflow kit under .claude/ does not match the revision recorded in
+$REVISION.
+
+  recorded $recorded
+  actual   $actual
+
+A kit-owned file was edited here. The next \`bin/workflow-kit-sync\` deletes
+that edit without a diff, so this is a decision, not a formality:
+
+  - the change belongs upstream    -> PR it to the kit repo, then sync
+  - the change belongs to us       -> move the file out of the kit-owned trees
+  - the kit was updated on purpose -> re-run bin/workflow-kit-sync to record it
+EOF
+  return 1
+}
+
+# A check that cannot fail is not a check. Prove this one can — on a synthetic
+# tree, so the selftest runs in the kit repo (which has no .claude/) as well as
+# in a consumer repo.
+selftest() {
+  local tmp d1 d2 d3 rc
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  mkdir -p "$tmp/.claude/commands" "$tmp/.claude/hooks"
+  printf 'a kit-owned command\n' > "$tmp/.claude/commands/flow-x.md"
+  printf '#!/bin/sh\nexit 0\n' > "$tmp/.claude/hooks/guard.sh"
+  chmod +x "$tmp/.claude/hooks/guard.sh"
+
+  d1="$("$KIT_DIGEST" "$tmp")"
+  printf 'selftest selftest 0000000\ndigest %s\n' "$d1" > "$tmp/$REVISION"
+
+  if ! verify "$tmp" >/dev/null 2>&1; then
+    echo "SELFTEST FAILED: an untouched kit did not verify" >&2
+    return 1
+  fi
+
+  # 1. Editing a kit-owned file must change the digest and fail the check.
+  printf 'an edit the next sync would delete\n' >> "$tmp/.claude/commands/flow-x.md"
+  d2="$("$KIT_DIGEST" "$tmp")"
+  if [ "$d1" = "$d2" ]; then
+    echo "SELFTEST FAILED: editing a kit-owned file did not change the digest" >&2
+    return 1
+  fi
+  verify "$tmp" >/dev/null 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then
+    echo "SELFTEST FAILED: kit-verify passed on a tampered kit" >&2
+    return 1
+  fi
+
+  # 2. Dropping a hook's exec bit must too — a hook that cannot run is a
+  #    silent hole, and the file bytes alone would not show it.
+  printf 'selftest selftest 0000000\ndigest %s\n' "$d2" > "$tmp/$REVISION"
+  chmod -x "$tmp/.claude/hooks/guard.sh"
+  d3="$("$KIT_DIGEST" "$tmp")"
+  if [ "$d2" = "$d3" ]; then
+    echo "SELFTEST FAILED: dropping a hook's exec bit did not change the digest" >&2
+    return 1
+  fi
+
+  echo "selftest ok — an edited kit file, and a disarmed hook, each fail the check"
+  return 0
+}
+
+case "${1:-}" in
+  --selftest) selftest; exit $? ;;
+  '') verify "$(pwd)"; exit $? ;;
+  *) echo "usage: kit-verify [--selftest]" >&2; exit 2 ;;
+esac
