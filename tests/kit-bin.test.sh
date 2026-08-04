@@ -132,6 +132,39 @@ ENV="$(mk_envelope "$WORK/r6c")"
 "$BIN/parse-verdict" critic "$ENV" >/dev/null 2>&1; RC=$?
 expect_exit "critic garbage types: exit" "$RC" 4
 
+# 6d. Invalid JSON escapes from quoted source code (agent-flow#13): a critic
+# quoting a template literal emits \` and \$ — illegal escapes that fail every
+# strict parser. The verdict is substantively fine; parse-verdict repairs by
+# dropping the backslash and the payload keeps the raw characters.
+cat > "$WORK/r6d" <<'EOF'
+Walkthrough prose the model wrote first.
+{"verdict":"approved","findings":["NIT: say(\`${made.name} is yours\`) has no seam-level example"],"summary":"fine after repair","learnings":[]}
+EOF
+ENV="$(mk_envelope "$WORK/r6d")"
+OUT="$("$BIN/parse-verdict" critic "$ENV")"; RC=$?
+expect_exit "critic invalid-escape repair: exit" "$RC" 0
+expect_eq "critic repair: verdict" "$(printf '%s' "$OUT" | jq -r '.verdict')" "approved"
+expect_eq "critic repair: backticks survive as content" "$(printf '%s' "$OUT" | jq -r '.findings[0]' | tr -cd '\140' | wc -c | tr -d ' ')" "2"
+expect_eq "critic repair: dollar survives" "$(printf '%s' "$OUT" | jq -r '.findings[0]' | grep -c '${made.name}')" "1"
+
+# 6e. Repair applies to acceptance mode too, and valid escapes are untouched.
+cat > "$WORK/r6e" <<'EOF'
+{"gaps":["CRITICAL [c1:src/a.rs:tpl]: code says \`x\` and \"y\" and a\\b"],"gaps_summary":"tpl","minor":[]}
+EOF
+ENV="$(mk_envelope "$WORK/r6e")"
+OUT="$("$BIN/parse-verdict" acceptance "$ENV")"; RC=$?
+expect_exit "acceptance invalid-escape repair: exit" "$RC" 0
+expect_eq "acceptance repair: fp intact" "$(printf '%s' "$OUT" | jq -r '._fingerprints.gaps[0]')" "c1:src/a.rs:tpl"
+expect_eq "acceptance repair: valid escapes kept" "$(printf '%s' "$OUT" | jq -r '.gaps[0]' | grep -c '"y"')" "1"
+expect_eq "acceptance repair: escaped backslash kept" "$(printf '%s' "$OUT" | jq -r '.gaps[0]' | grep -c 'a\\b')" "1"
+
+# 6f. A line that stays broken after repair is still exit 4 — repair is not
+# a license to accept garbage.
+printf '{"verdict":"approved","findings":[unquoted]}\n' > "$WORK/r6f"
+ENV="$(mk_envelope "$WORK/r6f")"
+"$BIN/parse-verdict" critic "$ENV" >/dev/null 2>&1; RC=$?
+expect_exit "critic unrepairable: exit" "$RC" 4
+
 # ── harvest-learnings ─────────────────────────────────────────────────────
 
 LF="$WORK/learnings.jsonl"
