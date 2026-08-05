@@ -168,6 +168,20 @@ a plan. Signs of "too big":
 - Your would-be Confidence in a single PLAN would be < 7 purely because of
   scope (not unknowns).
 
+**Split shape rule (MECE).** A valid split is mutually exclusive,
+collectively exhaustive over the parent card:
+- *Mutually exclusive* — no two sub-tasks own the same behavior or file;
+  where one builds on another, write `depends on <sub-task N>` in its
+  scope line instead of letting the scopes overlap. Overlap is how two
+  workers edit the same file in parallel worktrees and one PR eats the
+  other.
+- *Collectively exhaustive* — the sub-task scopes together cover the
+  parent's whole ask; anything deliberately dropped is named in the
+  proposal's out-of-scope line, not silently lost. A gap here surfaces
+  months later as "wasn't that card done?".
+Walk both checks before posting; overlap → redraw the cut lines, gap →
+add a sub-task or an explicit out-of-scope line.
+
 ### F. Decide outcome
 
 If this is a **research card** (step A2): the outcome is **F4 RESEARCH
@@ -223,6 +237,9 @@ This task is larger than one PR. I suggest splitting it into:
 1. **<sub-task 1 title>** — <one-line scope>
 2. **<sub-task 2 title>** — <one-line scope>
 3. **<sub-task 3 title>** — <one-line scope>
+
+Not covered by any sub-task: <what the parent asked for that this split
+deliberately drops — omit this line when the sub-tasks are exhaustive>
 
 To confirm: comment the exact phrase `split confirmed` (case-insensitive)
 on this card. On the next /flow-check I will create the sub-cards in
@@ -313,6 +330,7 @@ vague to scope an investigation → F2 QUESTIONS instead.
 | Looks like a duplicate of an existing card (from step C) | F2 QUESTIONS: "Possible duplicate of `<url>`. Close this one or merge?" |
 | Card overlaps a card in In Progress / Review | F2 QUESTIONS: "This overlaps `<url>` currently in <column>. Wait for that to merge, or coordinate?" |
 | Refactoring with no user-visible change | F3 PLAN is fine, but Scope must explicitly say "no functional change". Tests: include commands that confirm existing behavior is preserved. |
+| Move-only card (splits/relocations; plan says "no behavior change" and lists no new spec paths) | Size the Metrics by AUTHORED delta, not relocated lines, and say so in the size Why — a 900-line move with seven authored lines is S, and an S under the TDD-gate threshold spares phase A a red it cannot write. If the card stays gated (risk, or genuine new surface like an extraction's factories), the PLAN must name phase A's red explicitly: specs that import the not-yet-existing module and pin its behavior, red on `Cannot find module` (field-proven on workroom#279/#283; the ungated-size path on workroom#281). |
 | Card is marked `[research]` (see step A2) | F4 RESEARCH PLAN (or F2 QUESTIONS if the question is too vague). Deliverable is a doc under `research/`, never code. |
 | Card is clearly research/spike but NOT marked `[research]` | F2 QUESTIONS: "This looks like research, not code. Add the `[research]` marker to the title so it routes to a RESEARCH PLAN, or reformulate as 'on the basis of X — implement Y'." |
 | Tracker (MCP/CLI) does not respond | Stop, error to chat. Do not use a raw REST fallback. |

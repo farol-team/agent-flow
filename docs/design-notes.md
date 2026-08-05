@@ -43,6 +43,39 @@ overflow, not a failure: it lands as a `## Stop if` bullet and the old
 `QUESTIONS` route handles it. And nothing requires the command — a card
 typed straight into the board behaves exactly as it did before.
 
+## KIT_REVISION digest: the no-local-edits rule, made checkable
+
+**Problem.** "Consumers do not edit kit files in their own repo — they
+edit HERE, then pull" is the rule the whole canonical-source model rests
+on, and until now it was prose. The sync overwrites
+`.claude/{commands,prompts,hooks,bin,providers}` with `rsync --delete`, so
+a local edit to a prompt is erased by the next update *with no diff to
+notice it by*: the consumer learns about the edit when the behavior it
+bought silently disappears, weeks later, and the fix is re-derived from
+memory.
+
+**Mechanism.** Reported by a consumer repo, which had built it locally.
+`workflow-kit-sync` now records a second line in `.claude/KIT_REVISION`:
+a sha256 over every file in the kit-owned trees — path, contents, and
+the exec bit, since a hook that lost `+x` is a silent hole the bytes
+alone don't show. `bin/kit-verify` recomputes it and fails the pull
+request while the edit still exists, naming the three ways out (upstream
+it, move the file out of the kit-owned trees, re-sync deliberately).
+`--selftest` tampers with a synthetic kit on every run and asserts both
+failures, because a green check that cannot go red says nothing.
+`kit-digest`/`kit-verify` live in the consumer's `bin/`, never
+`.claude/bin/` — that tree is one the sync wipes, and a check the sync
+can delete is not a check.
+
+**Limit.** The digest proves the trees match what the last sync wrote; it
+says nothing about whether that revision was any good. It also cannot
+sync itself: the three `bin/` scripts are copied once at adoption and
+never updated by the sync (they must survive the deletion), so the sync
+now diffs them against this repo and says when they've fallen behind —
+which is a note, not an update. And it fails open by design: a consumer
+whose `KIT_REVISION` predates the digest gets "records a revision but no
+digest — re-run the sync", not a broken sync.
+
 ## Verification gate: quote the evidence or it's a minor
 
 **Problem.** LLM reviewers produce plausible-but-wrong findings

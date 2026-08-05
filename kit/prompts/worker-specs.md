@@ -42,6 +42,17 @@ extend the plan.
    covering every acceptance criterion (positive AND negative paths).
    Assert BEHAVIOR (observable outcomes), not implementation details.
 
+   `## Acceptance criteria` lists numbered WHEN/THEN scenarios (`S1.`,
+   `S2.`, …). They are your coverage contract: write at least one
+   example per scenario, tag it with the scenario id in the example
+   description (e.g. `it "[S2] rejects an expired token with 401"`), and
+   let the description mirror the scenario's WHEN/THEN wording. Every
+   example must trace to a scenario — an example with no scenario means
+   either you drifted off-plan (delete it) or the plan is missing a
+   scenario (BLOCKED, see below). If the plan has no numbered scenarios
+   (older plan), fall back to mapping `## Acceptance criteria` /
+   `## Behavior` items the same way, without tags.
+
 2. Do NOT create or modify any production file. Only test/spec paths
    from `## Files` (plus fixtures/factories if the plan lists them).
 
@@ -64,6 +75,9 @@ extend the plan.
 
 - An acceptance criterion cannot be expressed as a runnable spec with
   the toolchain available.
+- A behavior the plan's `## Scope` / `## Behavior` demands has no
+  `S<n>` scenario to trace an example to — the scenario list is
+  incomplete, and inventing scenarios is the planner's job, not yours.
 - The plan's spec paths conflict with the existing suite layout.
 
 Finish with `BLOCKED: <reason>` per the formatting role.
@@ -71,6 +85,10 @@ Finish with `BLOCKED: <reason>` per the formatting role.
 # What you must NOT do
 
 - No production code. None. Not even a stub "to make specs loadable" —
-  a spec failing on a missing constant IS the right red state.
+  a spec failing on a missing constant IS the right red state. For an
+  extraction card the same applies one level up: specs that import the
+  module phase B creates and pin its factory's behavior, red on
+  `Cannot find module`, ARE the right red — do not BLOCK just because
+  the plan's behavior already exists elsewhere.
 - Do NOT spawn sub-agents, move the card, or post to the tracker.
 - Do NOT force-push, rebase, or amend.

@@ -1,0 +1,29 @@
+# Example CI job: the kit under .claude/ is the revision it says it is.
+#
+# Copy into a consumer repo as `.github/workflows/kit.yml` (or fold the steps
+# into an existing workflow). Needs `bin/kit-verify` + `bin/kit-digest` +
+# `bin/workflow-kit-sync` from this repo's `scripts/` — see README "Adoption".
+#
+# Why CI and not a git hook: everything else in .claude/ constrains a worker
+# that /flow-run started, in a worktree it provisioned. Work done in a worktree
+# somebody made by hand meets none of those guards. A pull-request check is the
+# one place that cannot be skipped by not running a command.
+name: kit
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  kit-intact:
+    name: the workflow kit is the revision it says it is
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: kit matches .claude/KIT_REVISION
+        run: bin/kit-verify
+      - name: and the check can fail
+        # A green check that cannot go red says nothing. This proves it can on
+        # every run, rather than on the day somebody thinks to try it.
+        run: bin/kit-verify --selftest

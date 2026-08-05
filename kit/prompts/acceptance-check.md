@@ -205,8 +205,8 @@ check says whether it's good. Review the diff as a senior reviewer:
   finding).
 - No copy-paste blocks that beg for an extraction WITHIN the touched
   files (Article III: don't demand new abstractions beyond them).
-- Error paths from the plan's `## Acceptance criteria` / `## Behavior`
-  actually covered.
+- Error paths from the plan's `## Acceptance criteria` (its numbered
+  WHEN/THEN scenarios, when present) / `## Behavior` actually covered.
 - No debugging leftovers (`puts`/`console.log`/`dbg!`), no commented-out
   code, no TODO without a card reference.
 
@@ -240,6 +240,12 @@ single-line JSON object with these keys and nothing else:
 ```
 {"gaps":["<SEV [<fingerprint>]: gap 1>",...],"gaps_summary":"<short>; <short>; ...","minor":["[<fingerprint>] <minor 1>",...],"verdicts":{"spec":"pass|fail","quality":"approved|rejected"},"learnings":[{"type":"pitfall","key":"<kebab>","insight":"<one sentence>","confidence":8,"files":["<repo-relative>"]}]}
 ```
+
+- Inside JSON strings, quote code as it is — never backslash-escape
+  backticks, dollars, or anything beyond the legal JSON escapes
+  (`\" \\ \/ \b \f \n \r \t \uXXXX`): an invalid escape makes the whole
+  verdict unparseable (agent-flow#13; the reader repairs the common case,
+  but a contract nobody bends is better than a repair).
 
 - `gaps` — critical + important findings only, each formatted
   `CRITICAL [<fingerprint>]: …` / `IMPORTANT [<fingerprint>]: …`.

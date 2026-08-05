@@ -30,7 +30,7 @@ command -v jq >/dev/null 2>&1 || { echo "FAIL: jq is required (it is already a k
 
 # ── 1. Shell scripts: syntax + executable bit ─────────────────────────────
 
-for f in kit/hooks/*.sh kit/bin/* scripts/workflow-kit-sync; do
+for f in kit/hooks/*.sh kit/bin/* scripts/*; do
   [ -f "$f" ] || continue
   if bash -n "$f" 2>/dev/null; then pass; else fail "$f: bash syntax error (bash -n)"; fi
   if [ -x "$f" ]; then pass; else fail "$f: not executable (chmod +x, adoption step depends on it)"; fi
