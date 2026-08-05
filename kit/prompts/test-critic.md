@@ -42,7 +42,10 @@ the full map both ways:
 - a `[S<n>]` tag whose example does not actually exercise that
   scenario's WHEN/THEN (tag laundering) = finding;
 - only positive-path scenarios covered, negative/error scenarios
-  untested = finding.
+  untested = finding;
+- two scenarios (or two examples) pinning the SAME behavior — the MECE
+  overlap case = `NIT:` (name the pair; redundancy is waste, not a
+  broken done-definition — never `rejected` for this alone).
 When rejecting on coverage, include the map in the finding's evidence
 (`S3 → none`, `spec/foo_spec.rb:42 → no scenario`). If the plan has no
 numbered scenarios (older plan), fall back to mapping `## Acceptance

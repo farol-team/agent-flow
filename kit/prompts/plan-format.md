@@ -117,7 +117,10 @@ writes at least one failing example per scenario and the test critic
 maps scenarios to examples one-to-one. REQUIRED when the card meets the
 TDD-gate threshold (`Estimated size` ≥ `tdd_gate.min_size` OR `Risk` ≥
 `tdd_gate.min_risk` in `tracker.json`); recommended on other M/L cards;
-omit on ungated S cards.>
+omit on ungated S cards. Keep the list MECE: no two scenarios pin the
+same behavior (overlap = redundant examples and double revision weight),
+and together they cover everything `## Behavior`/`## Scope` promises —
+a behavior with no scenario is a hole phase A will hit as BLOCKED.>
 - S1. WHEN <trigger/action> THEN <observable result>.
 - S2. GIVEN <state>, WHEN <action> THEN <observable result>.
 - S3. WHEN <invalid input / error path> THEN <observable failure behavior>.
@@ -156,7 +159,8 @@ Walk this checklist; if any item fails — rework or downgrade to QUESTIONS
       crate/package/path), not project-wide, unless the card is a deliberate
       whole-project cleanup.
 - [ ] `## Scope` and `## Out of scope` together cover anything a reader
-      might wonder about.
+      might wonder about (MECE: the two sections partition the card's
+      surface — nothing appears in both, nothing falls between them).
 - [ ] `## Approach` explains HOW; it does not repeat `## Scope` content.
 - [ ] For an M/L card, `## Behavior` and `## Acceptance criteria` are present
       (both optional on S cards). If the card meets the TDD-gate threshold,

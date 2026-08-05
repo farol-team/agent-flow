@@ -18,7 +18,9 @@ evidence-before-claims, TDD iron law),
 verification gate and file-anchored project learnings are adapted from its
 review/learnings mechanics),
 [Fission-AI/OpenSpec](https://github.com/Fission-AI/OpenSpec) (numbered
-WHEN/THEN acceptance scenarios as the TDD gate's coverage contract), and
+WHEN/THEN acceptance scenarios as the TDD gate's coverage contract),
+the MECE principle from Minto's Pyramid Principle (split proposals and
+scenario lists must be mutually exclusive, collectively exhaustive), and
 an adversarial-critics TDD process
 (refute-framed test critic, mutation-resistance checks).
 

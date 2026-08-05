@@ -168,6 +168,20 @@ a plan. Signs of "too big":
 - Your would-be Confidence in a single PLAN would be < 7 purely because of
   scope (not unknowns).
 
+**Split shape rule (MECE).** A valid split is mutually exclusive,
+collectively exhaustive over the parent card:
+- *Mutually exclusive* — no two sub-tasks own the same behavior or file;
+  where one builds on another, write `depends on <sub-task N>` in its
+  scope line instead of letting the scopes overlap. Overlap is how two
+  workers edit the same file in parallel worktrees and one PR eats the
+  other.
+- *Collectively exhaustive* — the sub-task scopes together cover the
+  parent's whole ask; anything deliberately dropped is named in the
+  proposal's out-of-scope line, not silently lost. A gap here surfaces
+  months later as "wasn't that card done?".
+Walk both checks before posting; overlap → redraw the cut lines, gap →
+add a sub-task or an explicit out-of-scope line.
+
 ### F. Decide outcome
 
 If this is a **research card** (step A2): the outcome is **F4 RESEARCH
@@ -223,6 +237,9 @@ This task is larger than one PR. I suggest splitting it into:
 1. **<sub-task 1 title>** — <one-line scope>
 2. **<sub-task 2 title>** — <one-line scope>
 3. **<sub-task 3 title>** — <one-line scope>
+
+Not covered by any sub-task: <what the parent asked for that this split
+deliberately drops — omit this line when the sub-tasks are exhaustive>
 
 To confirm: comment the exact phrase `split confirmed` (case-insensitive)
 on this card. On the next /flow-check I will create the sub-cards in
