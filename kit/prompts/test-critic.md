@@ -32,10 +32,25 @@ must FAIL, and fail for the RIGHT reason — missing feature (uninitialized
 constant, unmet behavioral assertion) — not a typo, syntax error, or
 broken fixture. A passing example = tests existing behavior = finding.
 
-## 2. Coverage vs acceptance criteria
-Map each `## Acceptance criteria` / `## Behavior` item (fall back to
-`## Scope` when absent) to at least one example. Unmapped criterion =
-finding. Positive path only, no negative/error path = finding.
+## 2. Scenario coverage (one-to-one map)
+The plan's `## Acceptance criteria` lists numbered WHEN/THEN scenarios
+(`S1.`, `S2.`, …); phase A tags examples with their scenario id. Build
+the full map both ways:
+- scenario with no example that fails on its THEN outcome = finding;
+- example that traces to no scenario = scope drift or a hole in the
+  plan's scenario list = finding (name which);
+- a `[S<n>]` tag whose example does not actually exercise that
+  scenario's WHEN/THEN (tag laundering) = finding;
+- only positive-path scenarios covered, negative/error scenarios
+  untested = finding;
+- two scenarios (or two examples) pinning the SAME behavior — the MECE
+  overlap case = `NIT:` (name the pair; redundancy is waste, not a
+  broken done-definition — never `rejected` for this alone).
+When rejecting on coverage, include the map in the finding's evidence
+(`S3 → none`, `spec/foo_spec.rb:42 → no scenario`). If the plan has no
+numbered scenarios (older plan), fall back to mapping `## Acceptance
+criteria` / `## Behavior` items (then `## Scope`) the same way, without
+tags.
 
 ## 3. Mutation resistance (thought experiment)
 For each spec: if the future implementation were `return nil` /

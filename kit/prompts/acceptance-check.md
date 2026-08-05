@@ -205,8 +205,8 @@ check says whether it's good. Review the diff as a senior reviewer:
   finding).
 - No copy-paste blocks that beg for an extraction WITHIN the touched
   files (Article III: don't demand new abstractions beyond them).
-- Error paths from the plan's `## Acceptance criteria` / `## Behavior`
-  actually covered.
+- Error paths from the plan's `## Acceptance criteria` (its numbered
+  WHEN/THEN scenarios, when present) / `## Behavior` actually covered.
 - No debugging leftovers (`puts`/`console.log`/`dbg!`), no commented-out
   code, no TODO without a card reference.
 

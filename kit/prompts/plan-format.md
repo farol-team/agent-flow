@@ -108,11 +108,22 @@ WHAT only — user-observable behavior, no tech stack, file paths, or API
 names here (those live in ## Files / ## Approach). Spec-kit rule: Behavior
 stays stable when the implementation changes.>
 
-## Acceptance criteria (optional — M/L cards)
-<testable Given/When/Then statements that define "done" beyond the raw
-## Tests commands — include positive AND negative cases. Each should map to a
-check a reviewer can run.>
-- Given <state>, when <action>, then <observable result>.
+## Acceptance criteria (scenarios — required on TDD-gated cards)
+<numbered WHEN/THEN scenarios (OpenSpec-style) that define "done" beyond
+the raw ## Tests commands — positive AND negative cases. One scenario =
+one testable behavior; GIVEN is optional setup context. Number them
+`S1.`, `S2.`, … — the numbers are the TDD gate's contract: phase A
+writes at least one failing example per scenario and the test critic
+maps scenarios to examples one-to-one. REQUIRED when the card meets the
+TDD-gate threshold (`Estimated size` ≥ `tdd_gate.min_size` OR `Risk` ≥
+`tdd_gate.min_risk` in `tracker.json`); recommended on other M/L cards;
+omit on ungated S cards. Keep the list MECE: no two scenarios pin the
+same behavior (overlap = redundant examples and double revision weight),
+and together they cover everything `## Behavior`/`## Scope` promises —
+a behavior with no scenario is a hole phase A will hit as BLOCKED.>
+- S1. WHEN <trigger/action> THEN <observable result>.
+- S2. GIVEN <state>, WHEN <action> THEN <observable result>.
+- S3. WHEN <invalid input / error path> THEN <observable failure behavior>.
 
 ## Cross-card notes
 <optional: only if the triage step found something relevant>
@@ -121,12 +132,16 @@ check a reviewer can run.>
 - Duplicates <card url>: <how>
 ```
 
-The three sections above (`## Behavior`, `## Acceptance criteria`,
-`## Cross-card notes`) are OPTIONAL and for human readers only — `/flow-run`
-does not parse them. `## Behavior` and `## Acceptance criteria` are borrowed
-from the design-doc template for larger (M/L) cards, where an end-to-end
-narrative and explicit done-conditions prevent drift; omit them on small (S)
-cards, where `## Scope` + `## Approach` + `## Tests` already suffice.
+`## Behavior` and `## Cross-card notes` are OPTIONAL and for human readers
+only — `/flow-run` does not parse them. `## Acceptance criteria` is also
+never parsed by `/flow-run`, but it is NOT human-only: on TDD-gated cards
+it is the input contract for phase A (`worker-specs.md`) and the test
+critic (`test-critic.md`), which map its numbered scenarios to spec
+examples — there it is required, not optional. `## Behavior` and
+`## Acceptance criteria` are borrowed from the design-doc template for
+larger (M/L) cards, where an end-to-end narrative and explicit
+done-conditions prevent drift; omit them on small ungated (S) cards,
+where `## Scope` + `## Approach` + `## Tests` already suffice.
 
 ## Self-check before publishing
 
@@ -144,10 +159,14 @@ Walk this checklist; if any item fails — rework or downgrade to QUESTIONS
       crate/package/path), not project-wide, unless the card is a deliberate
       whole-project cleanup.
 - [ ] `## Scope` and `## Out of scope` together cover anything a reader
-      might wonder about.
+      might wonder about (MECE: the two sections partition the card's
+      surface — nothing appears in both, nothing falls between them).
 - [ ] `## Approach` explains HOW; it does not repeat `## Scope` content.
 - [ ] For an M/L card, `## Behavior` and `## Acceptance criteria` are present
-      (both optional on S cards).
+      (both optional on S cards). If the card meets the TDD-gate threshold,
+      `## Acceptance criteria` is MANDATORY and its scenarios are numbered
+      (`S1.`, `S2.`, …) in WHEN/THEN form, covering at least one
+      negative/error path.
 - [ ] The plan leaves NO decisions to the worker — every choice that
       affects implementation is already made.
 - [ ] **Zero unresolved markers.** Anywhere you were tempted to guess, you
@@ -232,8 +251,11 @@ For `## Metrics`, the parser expects these exact field names (case-sensitive):
 - `Expected iterations:` integer 1-3
 - `Estimated size:` one of `S`, `M`, `L`
 
-`## Behavior`, `## Acceptance criteria`, and `## Cross-card notes` are optional
-and not parsed; they're for human readers (used on larger M/L cards).
+`## Behavior`, `## Acceptance criteria`, and `## Cross-card notes` are never
+parsed by `/flow-run`. The first and last are for human readers;
+`## Acceptance criteria` is additionally read by the TDD-gate prompts
+(phase A and the test critic) as the scenario contract — required on
+gated cards, see above.
 
 A `[meta] RESEARCH PLAN` is recognized by its first line. For it, only
 `## Metrics` is parsed (same field rules above); the code-PLAN headers
