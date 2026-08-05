@@ -3,7 +3,8 @@
 Why the kit is shaped the way it is. Each section records a mechanism,
 the failure mode that motivated it, and the deliberate limits of the
 design. Newest first. (The adoption guide lives in the README; the
-reference config is `docs/trello.example.json`.)
+reference configs are `docs/tracker.example.trello.json` and
+`docs/tracker.example.github.json`.)
 
 ## /flow-refactor: the contour learns to remove
 
