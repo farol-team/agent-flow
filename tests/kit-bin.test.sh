@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # kit-bin.test.sh — unit tests for kit/bin/* (tier 1.5: free, no LLM).
-# These scripts carry the mechanical halves of trello-run's verdict
+# These scripts carry the mechanical halves of flow-run's verdict
 # parsing and learnings pipeline; this file is their behavioral pin.
 #
 # Usage: bash tests/kit-bin.test.sh   (exit 0 = all pass)
