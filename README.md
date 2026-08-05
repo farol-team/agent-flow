@@ -16,7 +16,10 @@ clarify-before-plan, WHAT/HOW separation),
 evidence-before-claims, TDD iron law),
 [garrytan/gstack](https://github.com/garrytan/gstack) (the quote-the-evidence
 verification gate and file-anchored project learnings are adapted from its
-review/learnings mechanics), and an adversarial-critics TDD process
+review/learnings mechanics),
+[Fission-AI/OpenSpec](https://github.com/Fission-AI/OpenSpec) (numbered
+WHEN/THEN acceptance scenarios as the TDD gate's coverage contract), and
+an adversarial-critics TDD process
 (refute-framed test critic, mutation-resistance checks).
 
 Extracted from a live project and used in production by its two original
