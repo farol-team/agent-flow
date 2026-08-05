@@ -292,6 +292,13 @@ self-check — restated here because they are new and easy to skip):
   the worker none.
 - `## Files` includes the test/spec paths (Article I: tests are planned
   work, not an afterthought).
+- On M/L cards, `## Files` is blast-radius-checked, not remembered: query
+  reverse-deps of the touched modules with whatever graph tool the target
+  repo has (codespaces belief map, packwerk, `cargo tree --invert`,
+  madge) and account for every hit — in `## Files`, in `## Out of scope`,
+  or the plan is incomplete. An unaccounted reverse-dep is the classic
+  iteration-2 discovery. No tool → say in `## Approach` that the manifest
+  came from reading.
 
 If any gap was auto-answered, post one `[meta] ASSUMED` comment per gap
 BEFORE the PLAN comment (so they appear above PLAN in the card's

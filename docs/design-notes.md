@@ -5,6 +5,38 @@ the failure mode that motivated it, and the deliberate limits of the
 design. Newest first. (The adoption guide lives in the README; the
 reference config is `docs/trello.example.json`.)
 
+## /flow-refactor: the contour learns to remove
+
+**Problem.** Every command in the flow adds code; nothing ever proposes
+removal or boundary repair, so complexity accumulates one merged card at
+a time — invisibly, because each card's diff looked fine in isolation.
+The stakes are structural, not aesthetic: the harness's own mechanisms
+(scoped gates, file manifests, diff-based acceptance) assume correctness
+in the target repo is a LOCAL property. Module cycles and cross-boundary
+co-change coupling erode exactly that assumption, and a worker whose
+context window holds one module is the first casualty.
+
+**Mechanism.** `/flow-refactor` sweeps a target repo with a four-lens
+priority (boundary violations → non-local correctness → dead code →
+complexity hotspots, constitution articles as an overlay), from cheap
+deterministic signals up: configured gates (`lint_cmd`, optional
+`arch_cmd`), graph/hygiene tools already present in the repo, git churn
+and cross-module co-change pairs, then a bounded LLM pass over the worst
+hotspots. Findings need evidence produced in this run — the gstack rule
+again. The top ≤5 become card drafts in the `flow-card.md` contract
+(Goal/Why/Done when/Out of scope/Stop if/Context), shown in full;
+`AskUserQuestion` picks which land in Backlog. From there they ride the
+normal contour — a refactor executed outside triage/gates/audit is
+exactly the unreviewed change the contour exists to prevent.
+
+**Limit.** It proposes; it never edits, and it never installs tools — a
+repo with no analyzers gets git-signals-plus-reading and a higher bar
+for proposing. Five cards per sweep is a hard cap: prioritization is the
+product, a 30-item dump is noise. A previously declined candidate is not
+re-proposed. And a finding that indicts the constitution itself (an
+article forces the coupling) is surfaced as a report section for the
+human, not laundered into a card.
+
 ## Authoring the card: ask at write time, not at triage time
 
 **Problem.** A rough card ("make the recorder not lose audio") is

@@ -250,6 +250,10 @@ the worker/critic/acceptance chain always runs on Claude Code.
   `strategy`. Research cards never auto-merge.
 - `worker.model` / `acceptance.model`: per-stage model override (e.g. a
   cheaper model for acceptance).
+- `targets[<name>].arch_cmd` (optional): an architecture-contract gate
+  (import-linter, packwerk, cargo-deny). When defined it joins the
+  mandatory PLAN gates next to `test_cmd`/`lint_cmd`, and `/flow-refactor`
+  uses it as a scan signal. Absent = skipped.
 - `--parallel N` on `/flow-run`: up to 4 cards in flight.
 - `/flow-run --resume <card>`: continue a card whose meta session died
   mid-run — per-card state is journaled to
@@ -258,6 +262,13 @@ the worker/critic/acceptance chain always runs on Claude Code.
 - `/flow-clean`: the sanctioned worktree cleanup — lists finished-card
   worktrees (card Done + PR merged/closed + clean tree) and removes only
   what the human confirms. `/flow-run` itself never deletes worktrees.
+- `/flow-refactor [target] [path]`: the complexity-removal loop — scans
+  a target repo for boundary decay (module cycles, internals-reaching
+  imports), co-change coupling, dead code and complexity hotspots, and
+  proposes ≤5 evidence-anchored refactor cards into Backlog; the human
+  picks which get created, and they ride the normal contour from there.
+  Reads the target's optional `arch_cmd` (an architecture-contract gate
+  like import-linter/packwerk/cargo-deny) when configured.
 
 ## Known origins
 

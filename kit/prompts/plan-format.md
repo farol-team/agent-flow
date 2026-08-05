@@ -48,6 +48,10 @@ Each PLAN's `## Tests` must include:
 - the test command(s) that cover the change — the target's `test_cmd` applied
   to the touched path/crate/filter (plus what each covers);
 - the target's `lint_cmd` (lint + format gate) scoped to the touched paths;
+- the target's `arch_cmd` (architecture-contract gate: import-linter,
+  packwerk, cargo-deny), when the target defines one — boundary
+  violations are caught per card, not left to the next `/flow-refactor`
+  sweep;
 - any setup the gate needs (e.g. a DB prepare step before tests), if the
   project's `project-context.md` calls for it;
 - a `<manual step, if needed>` — what and how to verify.
@@ -153,8 +157,17 @@ Walk this checklist; if any item fails — rework or downgrade to QUESTIONS
 - [ ] Every command in `## Tests` will actually run (correct crate name,
       test filter resolves).
 - [ ] `## Tests` includes the target's mandatory gates — its `test_cmd` for
-      the touched path + its `lint_cmd` (lint+format) — from `tracker.json`.
-      (Docs/research cards have no gates.)
+      the touched path + its `lint_cmd` (lint+format) + its `arch_cmd` when
+      the target defines one — from `tracker.json`. (Docs/research cards
+      have no gates.)
+- [ ] On an M/L card, `## Files` was checked against the blast radius, not
+      assembled from memory: when the target repo has a dependency-graph
+      tool (a codespaces belief map — `belief_search.py rdeps`, packwerk,
+      `cargo tree --invert`, madge), reverse-deps of every touched module
+      were queried, and each hit is in `## Files`, named in `## Out of
+      scope`, or the plan is incomplete. No graph tool available →
+      `## Approach` says the manifest was assembled by reading, so the
+      reader knows its confidence source.
 - [ ] Those gates are scoped to what `## Files` touches (a single
       crate/package/path), not project-wide, unless the card is a deliberate
       whole-project cleanup.
