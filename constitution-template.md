@@ -74,3 +74,15 @@ HTTP APIs, paid services, clock).
 ### Article P1 — <name>
 *(Rationale: <incident / decision, one line>.)*
 <the rule, stated so a reviewer can check a diff against it>
+
+### Article P2 — Complexity ceiling (worked example — adapt or delete)
+*(Rationale: LLM-authored code drifts toward branchy, verbose functions
+one fine-looking diff at a time; a numeric ceiling is the one form of
+simplicity feedback an agent cannot argue with.)*
+No function exceeds cyclomatic complexity <N>; where the toolchain
+reports it, Halstead Effort on touched files does not rise (Effort
+catches dense no-branch code that CC is blind to). Enforced by the
+target's `lint_cmd` — rubocop `Metrics/*`, ruff `C901` / xenon, clippy
+`cognitive_complexity` — never by reviewer eyeballing. On a legacy
+codebase, state it as a ratchet ("the diff does not worsen the number"),
+not an absolute.

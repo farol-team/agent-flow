@@ -42,7 +42,9 @@ remembering Y is one the contour is quietly wrong about.
    copy-paste blocks, dependencies nothing imports. Deletion candidates
    rank high: they shrink the surface every later card pays for.
 4. **Complexity concentrations** — oversized modules and hot functions
-   where churn × complexity is worst.
+   where churn × complexity is worst. Track two numbers where the tools
+   report them: cyclomatic complexity (branchy code) and Halstead Effort
+   (dense expression code with few branches — the case CC is blind to).
 
 Constitution articles are an overlay on all four: a finding that also
 violates an article outranks its peers.
@@ -98,11 +100,17 @@ From the target repo root, in this order, skipping what's absent:
   marginal cost.
 - **Graph and hygiene tools already in the repo** (present in its
   lockfile/config, runnable without install): dependency-cycle and
-  boundary checkers (import-linter, packwerk, madge, cargo-modules),
-  dead-code finders (vulture, knip, ts-prune, cargo +nightly udeps),
-  complexity reporters (radon, rubocop metrics, clippy cognitive
-  complexity). Cap each run; a tool that hangs or errors is noted and
-  skipped, never debugged in this session.
+  boundary checkers (import-linter, packwerk, madge, cargo-modules; a
+  codespaces belief map when present — `belief_search.py boundaries` /
+  `rdeps`), dead-code finders (vulture, knip, ts-prune, cargo +nightly
+  udeps), complexity reporters (radon — CC and Halstead Effort, rubocop
+  metrics, clippy cognitive complexity). Cap each run; a tool that hangs
+  or errors is noted and skipped, never debugged in this session.
+  Discovery vs judgement: tools that infer layers heuristically (a
+  belief map's path-based classifier) are discovery signals — their
+  "violations" need corroborating evidence; only declared-contract tools
+  (import-linter, packwerk, cargo-deny — where the project states its
+  own layers) judge on their own.
 - **Git signals** (always available): churn per file over ~12 months
   (`git log --format= --name-only | sort | uniq -c`), file size, and
   co-change pairs that cross top-level module directories — the
