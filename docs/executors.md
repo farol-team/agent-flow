@@ -73,7 +73,7 @@ network access. `TMPDIR`, `TMP`, `TEMP`, `XDG_CACHE_HOME` and npm's cache point
 there so tests can create fixtures without changing the audited checkout or
 Git metadata. The absolute directory is frozen in `request.json` as
 `audit_temp`, remains available for inspection, and may be removed after the
-attempt is terminal. Profiles replace inherited permission grants. Unsupported
+attempt is terminal. A unique profile name prevents same-name inherited permission grants. Unsupported
 profile configuration fails closed; there is no unrestricted fallback.
 No Claude-specific `max_turns` guarantee is claimed for Codex.
 

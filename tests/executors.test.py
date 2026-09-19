@@ -131,9 +131,9 @@ else:
             self.assertEqual(p.returncode, 0, p.stderr)
             args = self.calls()[-1]['args']
             self.assertNotIn('--sandbox', args)
-            self.assertIn('default_permissions="agent-flow-audit"', args)
             request = json.loads((self.root/role/'request.json').read_text())
             scratch = Path(request['audit_temp'])
+            self.assertIn('default_permissions=' + json.dumps(scratch.name), args)
             self.addCleanup(lambda p=scratch: __import__('shutil').rmtree(p, ignore_errors=True))
             self.assertTrue(scratch.is_dir())
             self.assertEqual(scratch.stat().st_mode & 0o777, 0o700)
