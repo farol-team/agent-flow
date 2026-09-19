@@ -164,7 +164,8 @@ kit files in their own repo — they edit HERE (PR to this repo), then pull:
    one of the ones the sync deletes, and a check the sync can delete is
    not a check. (They are copied, never synced — `workflow-kit-sync`
    reports when your copies have fallen behind this repo.)
-2. Run `bin/workflow-kit-sync` to pull the latest kit. It overwrites
+2. Run `bin/workflow-kit-sync` to pull the latest kit (or use
+   `KIT_REF=<full-40-character-commit> bin/workflow-kit-sync` to pin it). It overwrites
    `.claude/{commands,prompts,hooks,bin,providers}` (deletions propagate), never touches
    project-owned files (`tracker.json`, `constitution.md`,
    `project-context.md`, `settings.local.json`, the committed
@@ -247,7 +248,10 @@ the worker/critic/acceptance chain always runs on Claude Code.
   which cards get the specs-first + test-critic path. Below the gate,
   workers still follow inline test-first discipline.
 - `auto_merge_criteria`: `min_confidence`, `max_risk`, `require_ci_green`,
-  `strategy`. Research cards never auto-merge.
+  `strategy`. CI must contain at least one check and all reported checks
+  must pass; absent/skipped/pending checks route to Review. Setting
+  `require_ci_green: false` is the explicit opt-out. Acceptance is bound
+  to the full PR head SHA, enforced again at merge. Research cards never auto-merge.
 - `worker.model` / `acceptance.model`: per-stage model override (e.g. a
   cheaper model for acceptance).
 - `targets[<name>].arch_cmd` (optional): an architecture-contract gate
@@ -257,8 +261,11 @@ the worker/critic/acceptance chain always runs on Claude Code.
 - `--parallel N` on `/flow-run`: up to 4 cards in flight.
 - `/flow-run --resume <card>`: continue a card whose meta session died
   mid-run — per-card state is journaled to
-  `<worker_log_dir>/<card-short>-state.json` at every phase boundary
-  (worker spawn, parse, verdict, merge decision).
+  `<worker_log_dir>/<card-short>-state.json` at every phase boundary.
+  Each Claude attempt has a durable, non-reusable directory: resume waits
+  for a live process or consumes its recorded result instead of launching
+  it again. Incomplete claims require inspection; failed journal writes
+  stop new side effects. See `docs/design-notes.md` for recovery limits.
 - `/flow-clean`: the sanctioned worktree cleanup — lists finished-card
   worktrees (card Done + PR merged/closed + clean tree) and removes only
   what the human confirms. `/flow-run` itself never deletes worktrees.
@@ -280,7 +287,7 @@ effect on behavior.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) — the short version: run both test
+See [CONTRIBUTING.md](CONTRIBUTING.md) — the short version: run all three test
 suites before every PR, `main` is PR-only, prompt growth is budgeted, and
 mechanical logic belongs in `kit/bin/` with behavioral pins.
 

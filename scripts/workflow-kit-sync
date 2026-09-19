@@ -8,7 +8,7 @@
 #   .claude/prompts/ui-design.md (optional per-project UI guide).
 #
 # Usage: bin/workflow-kit-sync            # sync from main
-#        KIT_REF=<branch|sha> bin/workflow-kit-sync
+#        KIT_REF=<branch|tag|full-sha> bin/workflow-kit-sync
 # Requires: gh (authenticated), git, rsync, jq.
 #
 # Exit codes: 0 = synced; 2 = synced, but .claude/tracker.json failed the
@@ -22,8 +22,19 @@ ROOT="$(git rev-parse --show-toplevel)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-gh repo clone "$KIT_REPO" "$TMP/kit" -- --depth 1 --branch "$KIT_REF" --quiet
-REV="$(git -C "$TMP/kit" rev-parse --short HEAD)"
+# --branch accepts names, not commit IDs. Resolve full SHAs by fetching
+# the exact object; fail before touching a consumer if it is unavailable.
+if [[ "$KIT_REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
+  gh repo clone "$KIT_REPO" "$TMP/kit" -- --depth 1 --no-checkout --quiet
+  git -C "$TMP/kit" fetch --depth 1 origin "$KIT_REF" --quiet
+  git -C "$TMP/kit" checkout --detach FETCH_HEAD --quiet
+  ACTUAL="$(git -C "$TMP/kit" rev-parse HEAD)"
+  [ "$ACTUAL" = "$(printf '%s' "$KIT_REF" | tr '[:upper:]' '[:lower:]')" ] || { echo "KIT_REF mismatch" >&2; exit 1; }
+else
+  gh repo clone "$KIT_REPO" "$TMP/kit" -- --depth 1 --branch "$KIT_REF" --quiet
+fi
+REV="$(git -C "$TMP/kit" rev-parse HEAD)"
+mkdir -p "$ROOT/.claude"
 
 rsync -a --delete "$TMP/kit/kit/commands/" "$ROOT/.claude/commands/"
 rsync -a --delete --exclude ui-design.md "$TMP/kit/kit/prompts/" "$ROOT/.claude/prompts/"

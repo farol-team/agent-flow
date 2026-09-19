@@ -47,7 +47,7 @@ expect_eq "acceptance clean: cost" "$(printf '%s' "$OUT" | jq '._cost_usd')" "1.
 # 2. Tolerant: prose around the JSON line; unfingerprinted entry counts in total only.
 cat > "$WORK/r2" <<'EOF'
 I ran all checks. Here is the verdict:
-{"gaps":["IMPORTANT: entry without fingerprint"],"gaps_summary":"x","minor":[]}
+{"gaps":["IMPORTANT: entry without fingerprint"],"gaps_summary":"x","minor":[],"verdicts":{"spec":"fail","quality":"approved"}}
 Thanks!
 EOF
 ENV="$(mk_envelope "$WORK/r2")"
@@ -55,7 +55,7 @@ OUT="$("$BIN/parse-verdict" acceptance "$ENV")"; RC=$?
 expect_exit "acceptance prose: exit" "$RC" 0
 expect_eq "acceptance prose: fps" "$(printf '%s' "$OUT" | jq -c '._fps')" '{"parsed":0,"total":1}'
 expect_eq "acceptance prose: fp null" "$(printf '%s' "$OUT" | jq '._fingerprints.gaps[0]')" "null"
-expect_eq "acceptance prose: verdicts default" "$(printf '%s' "$OUT" | jq -r '.verdicts.spec')" "pass"
+expect_eq "acceptance prose: explicit verdict retained" "$(printf '%s' "$OUT" | jq -r '.verdicts.spec')" "fail"
 expect_eq "acceptance prose: learnings default" "$(printf '%s' "$OUT" | jq -c '.learnings')" "[]"
 
 # 3. BLOCKED result → exit 3 with reason.
@@ -80,7 +80,7 @@ expect_exit "acceptance no-json: exit" "$RC" 4
 # place (regression: jq capture on a non-matching string emits an empty
 # stream, which silently dropped the entry and misaligned the arrays).
 cat > "$WORK/r5a" <<'EOF'
-{"gaps":["IMPORTANT: unfingerprinted first","CRITICAL [c1:a:b]: second"],"gaps_summary":"x","minor":[]}
+{"gaps":["IMPORTANT: unfingerprinted first","CRITICAL [c1:a:b]: second"],"gaps_summary":"x","minor":[],"verdicts":{"spec":"fail","quality":"approved"}}
 EOF
 ENV="$(mk_envelope "$WORK/r5a")"
 OUT="$("$BIN/parse-verdict" acceptance "$ENV")"
@@ -98,15 +98,14 @@ ENV="$(mk_envelope "$WORK/r5c")"
 "$BIN/parse-verdict" acceptance "$ENV" >/dev/null 2>&1; RC=$?
 expect_exit "acceptance non-string gap entry: exit" "$RC" 4
 
-# 5d. Last-verdict-wins is a PINNED trade-off: an echoed example after the
-# real verdict wins (the prompts' one-line-final-response rule is the guard).
+# 5d. Multiple candidate verdicts are ambiguous, never last-example-wins.
 cat > "$WORK/r5d" <<'EOF'
-{"gaps":["CRITICAL [c1:a:b]: real gap"],"gaps_summary":"real","minor":[]}
-{"gaps":[],"gaps_summary":"","minor":[]}
+{"gaps":["CRITICAL [c1:a:b]: real gap"],"gaps_summary":"real","verdicts":{"spec":"fail","quality":"approved"}}
+{"gaps":[],"gaps_summary":"","verdicts":{"spec":"pass","quality":"approved"}}
 EOF
 ENV="$(mk_envelope "$WORK/r5d")"
-OUT="$("$BIN/parse-verdict" acceptance "$ENV")"
-expect_eq "last-verdict-wins pinned" "$(printf '%s' "$OUT" | jq '.gaps | length')" "0"
+"$BIN/parse-verdict" acceptance "$ENV" >/dev/null 2>&1; RC=$?
+expect_exit "ambiguous multiple verdicts rejected" "$RC" 4
 
 # 5e. Multi-line BLOCKED: reason is the first line only.
 printf 'BLOCKED: could not run checks\n{"gaps":[],"gaps_summary":"","minor":[]}\n' > "$WORK/r5e"
@@ -149,7 +148,7 @@ expect_eq "critic repair: dollar survives" "$(printf '%s' "$OUT" | jq -r '.findi
 
 # 6e. Repair applies to acceptance mode too, and valid escapes are untouched.
 cat > "$WORK/r6e" <<'EOF'
-{"gaps":["CRITICAL [c1:src/a.rs:tpl]: code says \`x\` and \"y\" and a\\b"],"gaps_summary":"tpl","minor":[]}
+{"gaps":["CRITICAL [c1:src/a.rs:tpl]: code says \`x\` and \"y\" and a\\b"],"gaps_summary":"tpl","minor":[],"verdicts":{"spec":"fail","quality":"approved"}}
 EOF
 ENV="$(mk_envelope "$WORK/r6e")"
 OUT="$("$BIN/parse-verdict" acceptance "$ENV")"; RC=$?

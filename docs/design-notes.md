@@ -181,4 +181,45 @@ the orchestrator but dropped from the prompt's output contract: all
 break silently at runtime, possibly weeks later.
 
 **Mechanism.** `tests/kit-invariants.sh` (tier 1, free, every PR): shell
-syntax + exec bits, JSON validity, the config contra
+syntax + exec bits, JSON validity, the config contract, references and
+prompt budgets. Behavioral scripts are covered by `kit-bin.test.sh`;
+`review-gates.test.py` adds offline git, process and GitHub-transport fixtures.
+## Review gate repair: decisions, commits and interrupted attempts
+
+**Problem.** An empty gaps array could approve a contradictory spec/quality
+verdict; CI absence counted as success; acceptance was not tied to the PR
+commit later merged. A dead meta could replay a finished worker because its
+journal still said spawn. TDD recovery could change a plan and mark it Ready
+without renewed human approval. Finally, the sync script advertised commit
+pinning while passing a SHA to clone's branch option.
+
+**Mechanism.** Acceptance now requires both explicit, consistent verdicts;
+multiple candidate objects fail closed. `verify-pr-head` checks a clean
+tracked checkout, branch, base and remote SHA before and after acceptance.
+`merge-reviewed-pr` rechecks that recorded SHA, requires non-empty passing
+CI unless explicitly disabled, and uses GitHub's `--match-head-commit`.
+Queued merges are not Done. Branch cleanup is separate.
+
+Every Claude invocation uses `run-stage` with a persisted, unique attempt
+directory and an atomic mkdir claim. Result logs and the terminal exit code
+survive meta failure. `stage-status` returns start, wait, consume or inspect;
+an ambiguous/dead wrapper is NOT permission to repeat external side effects.
+No new spawn/merge is allowed when journal persistence fails. An amended
+PLAN returns to Plan Proposed; the old worktree stays available. On resume,
+old acceptance output retains its original reviewed SHA and approved plan.
+
+Full commit IDs use fetch plus detached checkout before any consumer files
+are changed; branch/tag installs remain supported. KIT_REVISION stores the
+full commit. Tests use real temporary git repositories and processes, with
+only GitHub transport replaced by an offline fixture.
+
+**Deliberate limits.** The LLM still orchestrates the protocol; these helpers
+are mandatory instructions, not a sandbox against a malicious orchestrator.
+A crashed wrapper with possibly living descendants requires reconciliation,
+not automatic exactly-once recovery. Atomic rename protects against partial
+process writes, not guaranteed durability across power loss without fsync.
+CI is conservatively all reported checks, including optional checks: skipped
+checks send the card to Review. This is stricter than branch protection.
+Renewed approvals and actual end-to-end Claude behavior still need a live
+smoke card. Old two-key acceptance outputs and pre-attempt journals require
+new verification/reconciliation rather than being silently grandfathered in.

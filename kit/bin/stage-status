@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Usage: stage-status <absolute-attempt-dir>
+# stdout {action:start|wait|consume|inspect, exit_code?:N}.
+# inspect means evidence is incomplete: reconcile logs/processes/PR manually,
+# never automatically respawn or truncate files. Portable ps identity check.
+set -euo pipefail
+[ "$#" -eq 1 ] || exit 2
+DIR="$1"
+case "$DIR" in /*) ;; *) exit 2 ;; esac
+emit() { jq -cn --arg action "$1" '{action:$action}'; }
+if [ ! -e "$DIR" ] && [ ! -L "$DIR" ]; then emit start; exit 0; fi
+if [ -f "$DIR/exit-code" ]; then
+  RC="$(cat "$DIR/exit-code")"
+  if [[ "$RC" =~ ^(0|[1-9][0-9]{0,2})$ ]] && [ "$RC" -le 255 ] && [ -f "$DIR/result.json" ] && [ -f "$DIR/stderr.log" ]; then
+    jq -cn --argjson rc "$RC" '{action:"consume",exit_code:$rc}'; exit 0
+  fi
+  emit inspect; exit 0
+fi
+if [ -f "$DIR/owner.json" ] && jq -e '
+  type == "object" and (.pid | type == "number") and .pid > 0 and .pid == (.pid | floor)
+  and (.host | type == "string") and (.start | type == "string") and (.start | length > 0)
+' "$DIR/owner.json" >/dev/null 2>&1; then
+  PID="$(jq -r .pid "$DIR/owner.json")"
+  if [ "$(jq -r .host "$DIR/owner.json")" = "$(hostname)" ] \
+     && kill -0 "$PID" 2>/dev/null \
+     && [ "$(LC_ALL=C ps -p "$PID" -o lstart= 2>/dev/null)" = "$(jq -r .start "$DIR/owner.json")" ]; then
+    STATE="$(LC_ALL=C ps -p "$PID" -o stat= 2>/dev/null || true)"
+    case "$STATE" in ''|*Z*|*X*) emit inspect ;; *) emit wait ;; esac
+    exit 0
+  fi
+fi
+emit inspect

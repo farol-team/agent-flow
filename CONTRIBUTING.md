@@ -9,9 +9,10 @@ the README ("Canonical source & staying in sync").
 ```sh
 bash tests/kit-invariants.sh   # static contracts (needs bash + jq)
 bash tests/kit-bin.test.sh     # behavioral pins for kit/bin/*
+python3 tests/review-gates.test.py  # offline git/process/GitHub fixtures (Python 3)
 ```
 
-CI runs both. Green locally = green in CI; there is no hidden step.
+CI runs all three suites. Green locally = green in CI; there is no hidden step.
 
 ## Rules that surprise people
 

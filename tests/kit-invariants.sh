@@ -117,7 +117,7 @@ done
 # One-directional by design: declared-but-unused is legal (e.g. <branch>
 # declared for context), used-but-undeclared is the bug.
 
-KNOWN_PLACEHOLDERS="card-url pr_url worktree-path branch base PLAN-comment prior-findings learnings iter MAX_ITER gaps-list critic-findings"
+KNOWN_PLACEHOLDERS="card-url pr_url worktree-path branch base PLAN-comment prior-findings reviewed-sha learnings iter MAX_ITER gaps-list critic-findings"
 
 for f in kit/prompts/*.md; do
   grep -q '^Placeholders' "$f" || continue   # roles/ and non-template files

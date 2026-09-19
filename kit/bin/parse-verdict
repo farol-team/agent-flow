@@ -16,10 +16,8 @@
 # Exit 3: subagent said `BLOCKED: <reason>` → stdout {"blocked": "<reason>", ...meta}
 # Exit 4: envelope/verdict unusable (crash path) → reason on stderr.
 #
-# Tolerant extraction: the verdict is the LAST line of `result` that parses
-# as a JSON object with the mode's required keys — prose around it is
-# ignored (a chatty model should not turn a valid verdict into a Blocked
-# card). Missing optional keys get contract defaults (legacy two-key shape).
+# Prose is tolerated around ONE verdict object. Ambiguous, incomplete or
+# contradictory verdicts fail closed; no default may manufacture approval.
 set -uo pipefail
 
 die() { echo "parse-verdict: $1" >&2; exit 4; }
@@ -30,8 +28,8 @@ case "$MODE" in acceptance|critic) ;; *) die "unknown mode '$MODE'" ;; esac
 command -v jq >/dev/null 2>&1 || die "jq is required"
 [ -f "$ENVELOPE" ] || die "envelope not found: $ENVELOPE"
 
-jq -e 'type == "object"' "$ENVELOPE" >/dev/null 2>&1 || die "envelope is not valid JSON: $ENVELOPE"
-jq -e '.is_error != true' "$ENVELOPE" >/dev/null 2>&1 || die "envelope has is_error=true"
+jq -s -e 'length == 1 and (.[0] | type == "object")' "$ENVELOPE" >/dev/null 2>&1 || die "envelope is not valid JSON: $ENVELOPE"
+jq -e '.is_error != true and (.result | type == "string")' "$ENVELOPE" >/dev/null 2>&1 || die "envelope reports an error or result is not text"
 
 META="$(jq '{_session_id: (.session_id // null), _cost_usd: (.total_cost_usd // 0), _num_turns: (.num_turns // null)}' "$ENVELOPE")"
 RESULT="$(jq -r '.result // empty' "$ENVELOPE")"
@@ -48,13 +46,23 @@ case "$TRIMMED" in
     ;;
 esac
 
-# Required keys WITH types — has() alone lets a garbage verdict flow
-# downstream ({"verdict":7,"findings":"oops"} must be exit 4, not a value
-# whose == "rejected" check silently reads as approved).
+# Validate schema AND agreement between the machine-readable decisions.
+# Required verdicts deliberately break the legacy two-key acceptance shape.
+COMMON='(if has("learnings") then (.learnings | type == "array") else true end)'
 if [ "$MODE" = "acceptance" ]; then
-  REQUIRED='(.gaps? | type) == "array" and (.gaps_summary? | type) == "string" and ((.minor? // []) | type) == "array" and ((.learnings? // []) | type) == "array" and (.gaps | all(type == "string")) and (.minor // [] | all(type == "string"))'
+  REQUIRED='(.gaps | type == "array") and (.gaps | all(type == "string"))
+    and (.gaps_summary | type == "string")
+    and (if has("minor") then (.minor | type == "array") and (.minor | all(type == "string")) else true end)
+    and (.verdicts | type == "object")
+    and (.verdicts.spec | IN("pass", "fail"))
+    and (.verdicts.quality | IN("approved", "rejected"))
+    and (((.gaps | length) == 0) == (.verdicts.spec == "pass" and .verdicts.quality == "approved"))'
 else
-  REQUIRED='(.verdict? | type) == "string" and (.findings? | type) == "array"'
+  REQUIRED='(.verdict | IN("approved", "rejected"))
+    and (.findings | type == "array") and (.findings | all(type == "string"))
+    and (if has("summary") then (.summary | type == "string") else true end)
+    and (if .verdict == "approved" then (.findings | all(startswith("NIT:")))
+         else (.findings | any(startswith("NIT:") | not)) end)'
 fi
 
 # Invalid JSON escapes are the one malformation seen in the field
@@ -68,26 +76,28 @@ repair_escapes() {
   printf '%s' "$1" | sed -E 's/\\([^"\\/bfnrtu])/\1/g'
 }
 
-# Last verdict-shaped line wins (the prompts require the FINAL response to
-# be the verdict). Deliberate trade-off, pinned by test: if a model echoes
-# a contract example AFTER its real verdict, the example wins — the
-# one-line-final-response rule in the prompts is what keeps this honest.
+# Count candidates before validation: never fall back to an earlier approval
+# when the final decision is malformed, or let an echoed example replace it.
 VERDICT=""
 while IFS= read -r line; do
   [ -z "$line" ] && continue
-  if printf '%s' "$line" | jq -e "(type == \"object\") and ($REQUIRED)" >/dev/null 2>&1; then
-    VERDICT="$line"
-    continue
+  case "$(printf '%s' "$line" | sed 's/^[[:space:]]*//')" in
+    BLOCKED:*) die "blocked text mixed with a verdict" ;;
+  esac
+  case "$line" in *\{*) ;; *) continue ;; esac
+  if ! printf '%s' "$line" | jq -s -e 'length == 1 and (.[0] | type == "object")' >/dev/null 2>&1; then
+    line="$(repair_escapes "$line")"
   fi
-  repaired="$(repair_escapes "$line")"
-  if [ "$repaired" != "$line" ] \
-     && printf '%s' "$repaired" | jq -e "(type == \"object\") and ($REQUIRED)" >/dev/null 2>&1; then
-    VERDICT="$repaired"
-  fi
+  printf '%s' "$line" | jq -s -e 'length == 1 and (.[0] | type == "object")' >/dev/null 2>&1 \
+    || die "malformed JSON candidate"
+  [ -z "$VERDICT" ] || die "multiple verdict objects are ambiguous"
+  VERDICT="$line"
 done <<EOF
 $RESULT
 EOF
-[ -n "$VERDICT" ] || die "no line of result parses as a $MODE verdict (required keys: $REQUIRED)"
+[ -n "$VERDICT" ] || die "no verdict object"
+printf '%s' "$VERDICT" | jq -e "($COMMON) and ($REQUIRED)" >/dev/null 2>&1 \
+  || die "invalid or contradictory $MODE verdict"
 
 if [ "$MODE" = "critic" ]; then
   printf '%s' "$VERDICT" | jq -c --argjson meta "$META" \
@@ -105,7 +115,7 @@ printf '%s' "$VERDICT" | jq -c --argjson meta "$META" '
   def fp: [try (capture("^(?:[A-Z]+[[:space:]]+)?\\[(?<f>[^\\]]+)\\]") .f) catch null] | first // null;
   {gaps, gaps_summary,
    minor: (.minor // []),
-   verdicts: (.verdicts // {spec: "pass", quality: "approved"}),
+   verdicts,
    learnings: (.learnings // [])}
   | . + {_fingerprints: {gaps: [.gaps[] | fp], minor: [.minor[] | fp]}}
   | . + {_fps: {parsed: ([.["_fingerprints"].gaps[], .["_fingerprints"].minor[]] | map(select(. != null)) | length),

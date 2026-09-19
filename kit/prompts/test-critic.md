@@ -92,7 +92,8 @@ Final response — exactly one line of JSON:
   cannot serve as the card's definition of done (unmapped criterion,
   fake red, stub-passable spec). `NIT:` findings never justify
   `rejected` on their own.
-- `approved` allows nit-level findings in `findings` (worker sees them
+- `verdict` must be exactly `approved` or `rejected`; findings must be strings.
+- `approved` allows only `NIT:`-prefixed findings in `findings` (worker sees them
   in phase B but is not forced to address them).
 - Inside JSON strings, quote code as it is — never backslash-escape
   backticks, dollars, or anything beyond the legal JSON escapes

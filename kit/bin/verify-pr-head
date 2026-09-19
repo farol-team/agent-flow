@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Usage: verify-pr-head <pr-url> <worktree> <branch> <base> [reviewed-sha]
+# stdout: the full SHA that the clean checkout and the open PR share.
+# Exit 1: mismatch / dirty tree / unavailable metadata. Never approves by default.
+set -euo pipefail
+[ "$#" -ge 4 ] && [ "$#" -le 5 ] || { echo 'verify-pr-head: expected pr worktree branch base [sha]' >&2; exit 1; }
+PR="$1"; TREE="$2"; BRANCH="$3"; BASE="$4"; EXPECTED="${5:-}"
+die() { echo "verify-pr-head: $*" >&2; exit 1; }
+HEAD_SHA="$(git -C "$TREE" rev-parse HEAD)"
+[ -z "$EXPECTED" ] || [ "$HEAD_SHA" = "$EXPECTED" ] || die 'checkout changed since acceptance'
+[ "$(git -C "$TREE" branch --show-current)" = "$BRANCH" ] || die 'wrong checkout branch'
+git -C "$TREE" diff --quiet HEAD -- || die 'tracked worktree changes are not reviewed commits'
+META="$(gh pr view "$PR" --json headRefOid,headRefName,baseRefName,state,isDraft)"
+printf '%s' "$META" | jq -e --arg sha "$HEAD_SHA" --arg branch "$BRANCH" --arg base "$BASE" '
+  .state == "OPEN" and .isDraft == false and .headRefOid == $sha
+  and .headRefName == $branch and .baseRefName == $base
+' >/dev/null || die 'PR head/base/branch/state does not match checkout'
+printf '%s\n' "$HEAD_SHA"

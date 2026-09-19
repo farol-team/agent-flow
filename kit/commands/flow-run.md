@@ -67,7 +67,8 @@ Four forms, all run from a Claude Code session in the repo:
   cleanup.`), re-fetches the prompt inputs the journal does not carry —
   the `[meta] PLAN` comment and, for `iter > 1`, the `<gaps-list>` from
   the last `[meta] Iteration` audit comment — from the card, then
-  re-enters at the recorded `next_action`:
+  reconciles the recorded attempt with `.claude/bin/stage-status` FIRST
+  (see State persistence), then re-enters at the recorded `next_action`:
   `spawn_iter_1` → the Step 2.1a TDD-gate eligibility check (NOT
   straight to Step 2.1 — a gated card must not silently lose its
   spec-first path); `spawn_iter_<N≥2>` → Step 2.1 with `iter = N`;
@@ -89,11 +90,12 @@ Combinations:
 - Do NOT write code yourself — only the worker (a `claude -p` process in a
   git worktree) writes code.
 - Do NOT open the PR yourself — only the worker (iteration 1) does that.
-- Do NOT move a card to `Done` or `Review` without first running the
-  acceptance check.
+- Do NOT claim acceptance or move a card to `Done` without an acceptance
+  check. A checkout/PR identity mismatch may route directly to `Review`
+  with an explicit "acceptance not established" explanation.
 - Do NOT comment in cards without the `[meta] ` or `[worker] ` prefix.
-- Do NOT continue working on a card after `Blocked` — the next action is
-  the human's.
+- Do NOT continue implementation after `Blocked` — the next action is
+  the human's. You may propose a revised PLAN for approval, without launching work.
 - Do NOT auto-merge if any auto-merge criterion fails — escalate to `Review`.
 
 ## Sources of truth
@@ -291,7 +293,7 @@ while pending or in_flight:
   on the meta-agent's main thread before the next worker spawn. This
   keeps the board ordered and avoids `git` racing itself in
   the parent repo.
-- **Worker spawns are async.** Each is `claude -p ... &` (background)
+- **Worker spawns are async.** Each uses `run-stage ... -- claude -p ... &` (background)
   with its own result/stderr files in `<worker_log_dir>`.
 - **Acceptance checks are serialized** per finished worker. Meta runs
   one acceptance procedure at a time (it competes for the same `cargo`
@@ -322,7 +324,11 @@ while pending or in_flight:
 
 ## Phase 1: Prepare
 
-a. Extract the `[meta] PLAN` comment from the card (latest one if multiple).
+a. Extract the `[meta] PLAN` comment approved by the human Ready transition.
+   Record its comment ID and SHA-256 of the exact body as `approved_plan`.
+   A newer/edited PLAN after that approval requires `Plan Proposed` and
+   another human approval; never substitute the latest PLAN on resume.
+   If approval cannot be tied to that exact PLAN, return to Plan Proposed.
    If absent → move card to `Blocked` with
    `[meta] No PLAN comment. Run /flow-check first.` Append session-log
    `BLOCKED | no PLAN`. Skip.
@@ -429,6 +435,8 @@ context; a dead meta session loses it while the worktree and PR live on.
 So meta journals the whole card state as one JSON object to
 `<target.worker_log_dir>/<card-short>-state.json` — all fields above plus
 `card_short`, `branch`, `worktree`, `base`, `pr_url`,
+`run_id`, `approved_plan` (comment ID + body SHA-256), `attempt_dir`,
+`reviewed_sha` (null until acceptance),
 `tdd_critic_rejected` (has the test critic already used its one
 rejection — so a resume at `tdd_critic` cannot grant a second respawn
 budget), and `next_action`.
@@ -449,9 +457,44 @@ re-enter:
 `done` means the card actually reached its terminal list (Done / Review
 / Blocked) — an accepted verdict alone is `merge_decision`, so a crash
 inside the auto-merge decision stays resumable. `/flow-run --resume
-<card-ref>` reloads this file (see Invocation). Writing is best-effort:
-a failed write never changes the iteration outcome — note it once in
-chat and continue.
+<card-ref>` reloads this file (see Invocation). A failed journal write STOPS new spawns and merge operations; report it.
+Already-running workers may finish, and their attempt directories remain
+recoverable. Never proceed with an unrecorded side effect.
+
+**Durable stage attempts (mandatory for EVERY Claude process).** Allocate
+one `run_id` before the first spawn; persist it and never regenerate it
+on resume. Stage IDs distinguish `iter1-specs-1`, `iter1-critic-1`,
+`iter1-specs-2`, `iter1-critic-2`, `iter1-impl`, `iterN-worker`, and
+`iterN-acceptance`. Persist stage completion (including
+`tdd_critic_rejected`) before moving to the next stage. Attempt directories are absolute paths under
+`<worker_log_dir>/<card-short>/<run_id>/<stage-id>`. Persist the exact
+`attempt_dir` BEFORE executing anything. Every spawn below uses:
+
+```bash
+.claude/bin/stage-status "<attempt-dir>"
+.claude/bin/run-stage "<attempt-dir>" -- claude <arguments>
+```
+
+Use absolute kit-bin paths when changing to the worktree. `start` permits
+`run-stage`; its atomic claim refuses duplicates even if two callers race.
+Exit 73 means re-read `stage-status`, NOT that Claude crashed.
+`wait` means the recorded wrapper is alive: poll the SAME attempt.
+`consume` means read `result.json`, `stderr.log`, and the recorded
+`exit_code` as `CLI_EXIT`; do NOT launch again, even if the meta journal
+still says spawn. `inspect` means incomplete/unknown evidence: stop and
+reconcile processes, logs, branch and existing PR; never infer permission
+to restart from a missing PID or an observation timeout. Old journals
+without attempt records also require manual reconciliation before resume.
+Never delete/reuse an attempt directory or overwrite its logs. A genuine
+retry gets its own persisted stage ID only after the previous exit is
+known and the protocol permits retry. A resumed PLAN must match
+`approved_plan`; a changed body requires renewed approval.
+
+For journal actions `merge_decision` and `done`, reconcile PR/tracker state
+directly; do not require a pending Claude attempt. Before replaying
+`merge_decision`, query the PR state. If already MERGED,
+reconcile its head SHA with `reviewed_sha` and finish tracker/log updates
+only. Unknown/different SHA -> Review; never repeat the merge blindly.
 
 ### Step 2.1a — TDD gate (spec-first, conditional)
 
@@ -467,15 +510,12 @@ carries inline test-first discipline for ungated cards).
    `SPECS_READY` (+ a `failing:` line). `BLOCKED:` / crash → handle
    exactly as Step 2.2. Store `session_id`.
 
-   A phase-A `BLOCKED` that indicts the PLAN rather than the code —
-   "cannot write any runnable failing spec for this card" on a move-only
-   plan is the field case (agent-flow#12) — is not a terminal state.
-   The sanctioned loop after the protocol Blocked: amend the PLAN (a
-   fresh `[meta] PLAN` comment — correct the authored-delta size so the
-   gate no longer applies, or name phase A's red per card-eval's
-   move-only row), remove the worktree and branch, move the card back to
-   `Ready for AI`, and re-enter Phase 1. Both field cases resolved in
-   one pass this way; neither needed a third.
+   A phase-A `BLOCKED` caused by an invalid PLAN requires re-triage.
+   Propose a corrected PLAN in `Plan Proposed` and wait for the human's
+   new Ready transition. Do not lower size/risk to bypass the TDD gate,
+   move the card to Ready yourself, or delete the worktree/branch.
+   Retain evidence; `/flow-clean` remains the cleanup procedure. A new
+   approved run uses a new run ID and a distinct branch/worktree suffix.
 2. **Spawn test critic** — same mechanics as the acceptance check
    (Step 2.3: versatile+formatting roles, edit tools disallowed, fresh
    session, `acceptance.model` if set) with body
@@ -508,9 +548,8 @@ Costs: add every spawn's `total_cost_usd` to `cost_usd`, increment
 
 ### Step 2.1 — Spawn worker
 
-Result path: `<target.worker_log_dir>/<card-short>-iter<iter>.result.json`
-(the CLI's JSON envelope). Stderr path:
-`<target.worker_log_dir>/<card-short>-iter<iter>.stderr.log`.
+Result path: `<attempt-dir>/result.json` (CLI envelope).
+Stderr: `<attempt-dir>/stderr.log`. Use the durable stage protocol above.
 
 Build the worker prompt by concatenating role blocks with the
 iteration-specific template body, in this order:
@@ -556,11 +595,10 @@ beats accumulated context. The iterN prompt body is the same either way.
 Spawn:
 ```bash
 cd <worktree-path>
-claude -p "<prompt>" \
+<absolute-kit-bin>/run-stage "<attempt-dir>" -- claude -p "<prompt>" \
   --permission-mode bypassPermissions \
   --output-format json \
-  --max-turns <worker.max_turns> \
-  > <result-json> 2> <stderr-log>
+  --max-turns <worker.max_turns>
 CLI_EXIT=$?
 ```
 Add `--model <worker.model>` when `worker.model` is non-empty, and
@@ -600,6 +638,17 @@ crash), never a worker decision.
 
 ### Step 2.3 — Acceptance check (subagent)
 
+For a NEW acceptance attempt only (`stage-status` = `start`), run
+`.claude/bin/verify-pr-head <pr_url> <worktree-path> <branch> <base>`
+and persist its output as `reviewed_sha` before launching the audit.
+On resume/consume, retain the ORIGINAL recorded SHA; never relabel an old
+result with the current HEAD. Missing recorded SHA -> Blocked.
+Failure -> Review, no acceptance claim. Pass that SHA to the audit prompt.
+Before consuming AND after acceptance, rerun the helper with the original
+`reviewed_sha` as its fifth argument;
+any mismatch/dirty tracked files invalidate the verdict -> Review.
+The audit runs in the verified checkout and must not modify it.
+
 Spawn the acceptance check as a separate subagent — meta does NOT run
 the procedure inline. This keeps verification isolated from
 orchestration and leaves room for multi-model consensus later.
@@ -611,7 +660,7 @@ Build the acceptance prompt by concatenating, in order:
 2. `.claude/prompts/roles/formatting.md`
 3. `.claude/prompts/acceptance-check.md` with placeholders substituted:
    `<card-url>`, `<pr_url>`, `<worktree-path>`, `<branch>`, `<base>`,
-   `<PLAN-comment>`, `<prior-findings>`.
+   `<PLAN-comment>`, `<prior-findings>`, `<reviewed-sha>`.
 
 `<prior-findings>` renders `finding_history` — the literal string `none`
 when it is empty (always on iteration 1), else one line per fingerprint:
@@ -625,13 +674,11 @@ edit tools are disallowed, and an acceptance-specific cheaper model
 can be configured via `acceptance.model`):
 ```bash
 cd <worktree-path>
-claude -p "<acceptance-prompt>" \
+<absolute-kit-bin>/run-stage "<attempt-dir>" -- claude -p "<acceptance-prompt>" \
   --permission-mode bypassPermissions \
   --disallowedTools Edit Write MultiEdit NotebookEdit \
   --output-format json \
-  --max-turns <acceptance.max_turns> \
-  > <target.worker_log_dir>/<card-short>-iter<iter>-acceptance.result.json \
-  2> <target.worker_log_dir>/<card-short>-iter<iter>-acceptance.stderr.log
+  --max-turns <acceptance.max_turns>
 CLI_EXIT=$?
 ```
 Add `--model <acceptance.model>` when non-empty. Acceptance never
@@ -643,12 +690,13 @@ Then extract the verdict mechanically — do NOT parse `result` yourself:
 PV_EXIT=$?
 ```
 - **exit 0** — stdout is the normalized verdict: `gaps[]`,
-  `gaps_summary`, `minor[]`, `verdicts`, `learnings` (contract defaults
-  already filled — tolerant of the legacy two-key shape and of prose
-  around the JSON line), plus `_fingerprints.{gaps,minor}` (entry-wise,
+  `gaps_summary`, `minor[]`, `verdicts`, `learnings` (optional arrays
+  default to empty; both verdicts are REQUIRED and schema-validated;
+  contradictory decisions or multiple JSON objects fail closed), plus
+  `_fingerprints.{gaps,minor}` (entry-wise,
   `null` where unparseable), `_fps.{parsed,total}`, `_session_id`,
-  `_cost_usd` (add to `cost_usd`), `_num_turns`. Empty `gaps` means
-  acceptance passes; `minor` never blocks.
+  `_cost_usd` (add to `cost_usd`), `_num_turns`. Acceptance requires
+  empty gaps AND spec=pass AND quality=approved; `minor` never blocks.
 - **exit 3** — the subagent said `BLOCKED:`; stdout carries the reason.
   Move card to `Blocked` with
   `[meta] Acceptance subagent failed (iter <iter>): <reason>. Log: <acceptance-result-json>`.
@@ -698,13 +746,15 @@ First update `finding_history` from the parsed verdict:
 - every fingerprint previously `open` that appears in NEITHER array →
   status `fixed`.
 
-**`gaps == []`** → acceptance passed.
+**`gaps == []`, `verdicts.spec == "pass"`, `verdicts.quality == "approved"`**
+→ acceptance passed. Any inconsistent verdict is a parser failure, not acceptance.
 - Append iter_log: `{iter, outcome: "accepted", gaps_count: 0, gaps_summary: "—", log_path}`.
 - Comment in card:
   ```
   [meta] Iteration <iter>: ACCEPTED ✓
   Verdicts: spec=<verdicts.spec>, quality=<verdicts.quality>
   Fingerprints: <fps_parsed>/<fps_total>
+  Reviewed commit: <reviewed_sha>
   Log: <result-json>
   ```
 - If `minor != []`, post ONE additional comment (the ledger — recorded,
@@ -779,7 +829,7 @@ Otherwise:
   ...
 
   **PR:** <pr_url>
-  **Logs:** <target.worker_log_dir>/<card-short>-iter*
+  **Logs:** <target.worker_log_dir>/<card-short>/<run_id>/
 
   Manual intervention needed. After fixing, move card to Ready for AI or
   Backlog.
@@ -814,18 +864,22 @@ Collect failures into `merge_blockers[]`.
 ### Check 3: CI green
 - If `require_ci_green` is false → skip.
 - `gh pr checks <pr_url>` or `gh pr view <pr_url> --json statusCheckRollup`.
-- Pass if all required checks are SUCCESS. If no checks are configured for
-  the repo at all → treat as pass and note "no CI configured" in audit.
+- Pass only with a non-empty check list and every reported check passing.
+  Missing, skipped, pending, cancelled, unreadable or failed checks -> Review.
+  A repo without CI must explicitly set `require_ci_green: false` to opt out.
 - Fail per failing check: `CI: <check name>: <status>`.
 
 ### Decision
 
 **`merge_blockers == []`** → **auto-merge**.
 ```bash
-gh pr merge <pr_url> --merge --delete-branch
+.claude/bin/merge-reviewed-pr <pr_url> <worktree-path> <branch> <base> \
+  <reviewed_sha> <require_ci_green> <strategy>
 ```
-(Strategy: `merge` = merge commit, per user choice. If `auto_merge_criteria.strategy`
-is something else, adjust the flag: `--squash` or `--rebase`.)
+The helper rechecks checkout/PR identity and CI, then uses
+`--match-head-commit <reviewed_sha>`. Never invoke a bare merge as fallback.
+Nonzero exit -> Review with the error. Exit 0 confirms GitHub state MERGED;
+a queued merge is NOT Done. Branches/worktrees remain for `/flow-clean`.
 
 Move card to `Done`. Comment:
 ```
@@ -835,7 +889,8 @@ Strategy: <strategy>
 Iterations: <iter> / 3
 Confidence: <N>/10, Risk: <risk>
 Cost: $<cost_usd> across <agent_runs> agent runs
-Branch deleted (origin).
+Reviewed commit: <reviewed_sha>
+Branch retained for inspection.
 
 Iteration history:
 - iter 1: <outcome> — <gaps_summary>
@@ -961,7 +1016,7 @@ deliberately deferred until a second board exists.
 | Worker result JSON missing / empty / unparseable | Blocked: crash path per Step 2.2. Point to the stderr log. |
 | `jq` not installed | Stop at bootstrap. It is required to parse worker result envelopes and by the guardrail hooks. |
 | Kit hooks missing from `<meta-project>/.claude/hooks/` | Proceed without guardrails; note once in chat. Acceptance still enforces scope post-hoc. |
-| `--resume <session_id>` fails (session expired / missing) | Retry the same spawn once WITHOUT `--resume` (fresh session); do not count the failed spawn as an iteration. |
+| `--resume <session_id>` fails (session expired / missing) | Only after a recorded terminal exit: one fresh-session retry in a new persisted attempt directory. Supply the FULL plan and phase rules (especially phase B); never retry from an empty context. |
 | Auto-merge succeeds but card move to Done fails | Comment in card that merge happened; chat error. Manual card move. |
 | `gh pr merge` fails (branch protection, conflicts) | Treat as auto-merge blocker; move to Review with `gh` error in comment. |
 | Worker prompt template file (`worker-iter1.md`, `worker-iterN.md`) missing | Stop. Don't inline a fallback. |
@@ -978,4 +1033,4 @@ deliberately deferred until a second board exists.
 | `--resume` and worktree/branch from the state file are gone | Blocked: `Resume failed`. Manual cleanup; do not recreate silently. |
 | `--resume` a card whose original meta session is still alive | Undetectable by meta — the human must ensure the old run is dead first (two metas double-drive the card: duplicate spawns, duplicate comments). |
 | State says `done` but the card is still in `In Progress` | The final state move failed after the terminal decision. Report the last iter_log outcome; the human finishes the move. |
-| State-file write fails (disk, permissions) | Continue the iteration normally; note once in chat. Resume just won't be available for this card. |
+| State-file write fails (disk, permissions) | Stop new spawns/merges; preserve attempt evidence and report. |
