@@ -15,6 +15,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import uuid
 
 BIN = Path(__file__).resolve().parent
@@ -71,7 +72,8 @@ def settings(config, role):
     require(executable is not None, provider + ' executable not found')
     return dict(executor=provider, executable=executable, model=model, timeout_seconds=seconds,
                 max_turns=turns if provider == 'claude' else None,
-                sandbox=sandbox if role == 'worker' else 'read-only', resume_sessions=resume)
+                sandbox=sandbox if role == 'worker' else ('read-only-with-temp' if provider == 'codex' else 'read-only'),
+                resume_sessions=resume)
 
 
 def prepare(args):
@@ -87,6 +89,10 @@ def prepare(args):
     require(bool(prompt.strip()), 'prompt file is empty')
     request = dict(version=1, role=args.role, worktree=worktree, settings=chosen,
                    config_sha256=fingerprint(config), prompt=prompt, resume_id=None, parent_attempt=None)
+    if chosen['executor'] == 'codex' and args.role != 'worker':
+        scratch = Path(tempfile.gettempdir()).resolve() / ('agent-flow-audit-' + uuid.uuid4().hex)
+        require(Path(worktree) not in scratch.parents, 'audit temporary directory must be outside the worktree')
+        request['audit_temp'] = str(scratch)
     if args.resume_from:
         require(args.role == 'worker', 'auditors require fresh sessions')
         require(chosen['resume_sessions'], 'worker session resume disabled')
@@ -119,7 +125,18 @@ def command(request, attempt):
     else:
         # Put exec options before resume: resume does not expose --sandbox.
         # Never inherit a broader sandbox or interactive approval policy.
-        cmd += ['exec', '--sandbox', cfg['sandbox'], '-c', 'approval_policy="never"']
+        cmd += ['exec', '-c', 'approval_policy="never"']
+        if request['role'] == 'worker':
+            cmd += ['--sandbox', cfg['sandbox']]
+        else:
+            # A fresh profile name avoids merging same-name inherited grants.
+            # Only this attempt's scratch directory is writable; source stays read-only.
+            name = Path(request['audit_temp']).name
+            profile = ('{ ' + json.dumps(name) + ' = { filesystem = { ":root" = "read", '
+                       + json.dumps(request['audit_temp'])
+                       + ' = "write" }, network = { enabled = false } } }')
+            cmd += ['-c', 'permissions=' + profile,
+                    '-c', 'default_permissions=' + json.dumps(name)]
         if request['resume_id']:
             cmd += ['resume', request['resume_id']]
         cmd += ['--json', '--output-last-message', str(attempt/'provider-final.txt')]
@@ -170,10 +187,22 @@ def execute(attempt):
         json.dump(request, f, sort_keys=True)
         f.flush()
         os.fsync(f.fileno())
+    env = dict(os.environ)
+    try:
+        if 'audit_temp' in request:
+            scratch = Path(request['audit_temp'])
+            scratch.mkdir(mode=0o700)
+            env.update(TMPDIR=str(scratch), TMP=str(scratch), TEMP=str(scratch),
+                       XDG_CACHE_HOME=str(scratch/'cache'), npm_config_cache=str(scratch/'npm-cache'))
+    except OSError as error:
+        print(json.dumps(dict(executor=request['settings']['executor'], is_error=True,
+              result='', error='audit scratch setup failed: ' + str(error), session_id=None,
+              total_cost_usd=None, num_turns=None, request_sha256=fingerprint(request))), flush=True)
+        return 4
     cmd = command(request, attempt)
     with (attempt/'provider.stdout').open('x') as stdout, (attempt/'provider.stderr.log').open('x') as stderr:
         p = subprocess.Popen(cmd, cwd=request['worktree'], stdin=subprocess.PIPE,
-                             stdout=stdout, stderr=stderr, text=True, start_new_session=True)
+                             stdout=stdout, stderr=stderr, text=True, env=env, start_new_session=True)
         try:
             p.communicate(request['prompt'], timeout=request['settings']['timeout_seconds'])
             rc = p.returncode if p.returncode >= 0 else 128 - p.returncode

@@ -624,7 +624,7 @@ CLI_EXIT=$?
 Add `--resume-from <worker_attempt>` only per policy. The adapter selects
 `worker.executor` or `executor.default`, and the stage's model. Claude uses
 its existing permission mode/hooks and `max_turns`. Codex uses the configured
-worker sandbox, never interactive approvals; audits use read-only. Both have
+worker sandbox, never interactive approvals; audits use read-only source with isolated writable temporary storage. Both have
 `executor.timeout_seconds`; Codex has no equivalent of Claude `max_turns`.
 A missing CLI or unsupported permission mode blocks; never weaken it to retry.
 
@@ -723,8 +723,8 @@ Spawn through the same adapter, with a fresh audit session:
 CLI_EXIT=$?
 ```
 The adapter selects `acceptance.executor` or `executor.default` and
-`acceptance.model`. Claude edit tools are disabled; Codex uses read-only
-sandbox. Neither is permission to mutate external services. Commands that
+`acceptance.model`. Claude edit tools are disabled; Codex uses read-only source
+with isolated writable temporary storage. Neither is permission to mutate external services. Commands that
 cannot run under the audit permissions must produce BLOCKED/failed coverage;
 do not fabricate evidence, skip gates or broaden permissions.
 

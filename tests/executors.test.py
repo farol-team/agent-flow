@@ -4,6 +4,8 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
+import runpy
 import subprocess
 import tempfile
 import unittest
@@ -28,7 +30,7 @@ import json, os, pathlib, subprocess, sys, time
 root = pathlib.Path(os.environ['FIXTURE'])
 args = sys.argv[1:]
 with (root/'calls').open('a') as f:
-    f.write(json.dumps({'cli': pathlib.Path(sys.argv[0]).name, 'args': args, 'cwd': os.getcwd(), 'prompt': sys.stdin.read()})+'\n')
+    f.write(json.dumps({'cli': pathlib.Path(sys.argv[0]).name, 'args': args, 'cwd': os.getcwd(), 'prompt': sys.stdin.read(), 'temp': os.environ.get('TMPDIR'), 'cache': os.environ.get('XDG_CACHE_HOME')})+'\n')
 mode = os.environ.get('MODE', 'ok')
 if mode == 'timeout':
     child = subprocess.Popen(['sleep', '60'])
@@ -128,9 +130,72 @@ else:
             p = self.launch(role, role=role)
             self.assertEqual(p.returncode, 0, p.stderr)
             args = self.calls()[-1]['args']
-            self.assertIn('read-only', args)
+            self.assertNotIn('--sandbox', args)
+            request = json.loads((self.root/role/'request.json').read_text())
+            scratch = Path(request['audit_temp'])
+            self.assertIn('default_permissions=' + json.dumps(scratch.name), args)
+            self.addCleanup(lambda p=scratch: __import__('shutil').rmtree(p, ignore_errors=True))
+            self.assertTrue(scratch.is_dir())
+            self.assertEqual(scratch.stat().st_mode & 0o777, 0o700)
+            self.assertNotIn(self.repo, scratch.parents)
+            self.assertEqual(self.calls()[-1]['temp'], str(scratch))
+            self.assertEqual(self.calls()[-1]['cache'], str(scratch/'cache'))
+            permissions = next(a for a in args if a.startswith('permissions='))
+            self.assertIn('":root" = "read"', permissions)
+            self.assertIn(json.dumps(str(scratch)) + ' = "write"', permissions)
+            self.assertIn('enabled = false', permissions)
+            self.assertNotIn(str(self.repo), permissions)
             self.assertNotIn('danger-full-access', args)
             self.assertNotIn('resume', args)
+
+    def test_scratch_setup_failure_retains_request_and_error(self):
+        self.cfg['executor']['default'] = 'codex'
+        self.assertEqual(self.launch(role='critic').returncode, 0)
+        request = json.loads((self.root/'attempt/request.json').read_text())
+        shutil.rmtree(request['audit_temp'])
+        request['audit_temp'] = str(self.root/'missing-parent'/'scratch')
+        attempt = self.root/'failed-setup'
+        result = subprocess.run([str(BIN/'run-stage'), str(attempt), '--',
+                                 'python3', str(BIN/'run-agent'), '_execute', str(attempt)],
+                                input=json.dumps(request), text=True, capture_output=True, env=self.env)
+        self.assertEqual(result.returncode, 4)
+        self.assertEqual(json.loads((attempt/'request.json').read_text()), request)
+        self.assertTrue(json.loads((attempt/'result.json').read_text())['is_error'])
+        self.assertEqual(len(self.calls()), 1)
+
+    @unittest.skipUnless(shutil.which('codex'), 'real Codex CLI is optional for policy enforcement smoke')
+    def test_real_codex_rejects_inherited_writable_profiles(self):
+        adapter = runpy.run_path(str(BIN/'run-agent'))
+        self.config.write_text(json.dumps({**self.cfg, 'executor': {'default': 'codex'}}))
+        from argparse import Namespace
+        request = adapter['prepare'](Namespace(config=str(self.config), role='critic',
+                     config_sha256=None, worktree=str(self.repo), prompt_file=str(self.prompt), resume_from=None))
+        scratch = Path(request['audit_temp']); scratch.mkdir()
+        self.addCleanup(lambda: shutil.rmtree(scratch, ignore_errors=True))
+        cmd = adapter['command'](request, self.root/'unused-attempt')
+        overrides = []
+        for i, value in enumerate(cmd):
+            if value == '-c': overrides += cmd[i:i+2]
+        selected = next(v.split('=', 1)[1].strip('"') for v in overrides if v.startswith('default_permissions='))
+        for inheritance in ['', 'extends = ":workspace"\n']:
+            home = self.root/('home'+str(len(inheritance))); home.mkdir()
+            (home/'config.toml').write_text('[permissions.agent-flow-audit]\n'+inheritance+
+                 '[permissions.agent-flow-audit.filesystem]\n'+json.dumps(str(self.repo))+' = "write"\n')
+            probe = """import pathlib,sys,tempfile,socket
+scratch,repo,outside=map(pathlib.Path,sys.argv[1:])
+with tempfile.TemporaryDirectory(dir=scratch) as d: pathlib.Path(d,'ok').write_text('ok')
+for path in [repo/'forbidden',repo/'.git'/'forbidden',outside/'forbidden']:
+ try: path.write_text('must be denied')
+ except OSError: pass
+ else: raise AssertionError(str(path)+' was writable')
+try: socket.create_connection(('192.0.2.1',443),timeout=0.2)
+except PermissionError: pass
+else: raise AssertionError('network permission was not denied')
+"""
+            result = subprocess.run([shutil.which('codex'), 'sandbox', '-P', selected, *overrides,
+                       '-C', str(self.repo), 'python3', '-c', probe, str(scratch), str(self.repo), str(self.root)],
+                       env=dict(os.environ, CODEX_HOME=str(home)), text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
 
     def test_claude_audit_disables_edit_tools(self):
         self.assertEqual(self.launch(role='acceptance').returncode, 0)

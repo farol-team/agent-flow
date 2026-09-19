@@ -48,7 +48,7 @@ against Codex 0.155.1 and Claude Code 2.1.266; incompatible flags fail closed.
 |---|---|---|
 | Launch | `claude -p`, JSON result | `codex exec --json`, JSONL plus final-message file |
 | Worker permissions | Existing `bypassPermissions` and project hooks | Explicit `workspace-write` by default; approvals `never` |
-| Audit permissions | Edit/Write/MultiEdit/NotebookEdit disabled | Explicit `read-only`; approvals `never` |
+| Audit permissions | Edit/Write/MultiEdit/NotebookEdit disabled | Read-only source + isolated writable temp; approvals `never` |
 | Turn budget | Stage `max_turns` | Unsupported; not silently translated |
 | Wall-clock deadline | `executor.timeout_seconds` | Same |
 | Resume | Exact recorded session ID | Exact recorded thread ID; never `--last` |
@@ -64,9 +64,17 @@ Codex workspace sandbox/network policies can prevent dependency installation,
 Git metadata writes, pushing or opening a PR. A permission failure is Blocked;
 the adapter never retries with broader access. Where the owner has deliberately
 provided an isolated environment, `executor.codex_sandbox: "danger-full-access"`
-is an explicit worker-only option. Audits stay read-only even then. Audits
+is an explicit worker-only option. Audited source stays read-only even then. Audits
 whose mandatory checks cannot run with their permissions must report a blocker
 or failed coverage; pre-existing worker output is not permission to skip them.
+Codex audits use an explicit permission profile: filesystem read access, write
+access only to a newly created per-attempt temporary directory, and no shell
+network access. `TMPDIR`, `TMP`, `TEMP`, `XDG_CACHE_HOME` and npm's cache point
+there so tests can create fixtures without changing the audited checkout or
+Git metadata. The absolute directory is frozen in `request.json` as
+`audit_temp`, remains available for inspection, and may be removed after the
+attempt is terminal. A unique profile name prevents same-name inherited permission grants. Unsupported
+profile configuration fails closed; there is no unrestricted fallback.
 No Claude-specific `max_turns` guarantee is claimed for Codex.
 
 ## Results, recovery and review
