@@ -1,0 +1,289 @@
+#!/usr/bin/env python3
+"""Freeze review inputs, group all changed files and verify coverage/evidence.
+
+No model/network calls. Exit 0: valid complete review (check), or accepted
+review (verify). Exit 3: incomplete/rejected. Exit 4: invalid/stale evidence.
+"""
+import argparse
+import fnmatch
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
+
+VERSION = 1
+
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def canonical(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()
+
+
+def digest(value):
+    return hashlib.sha256(canonical(value)).hexdigest()
+
+
+def load(path):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result, 'duplicate JSON key: ' + key)
+            result[key] = value
+        return result
+    return json.loads(Path(path).read_text(), object_pairs_hook=unique)
+
+
+def git(repo, *args):
+    p = subprocess.run(['git', '--literal-pathspecs', '-C', str(repo), *args], capture_output=True)
+    require(p.returncode == 0, 'git failed: ' + p.stderr.decode(errors='replace').strip())
+    return p.stdout
+
+
+def text(value):
+    return value.decode('utf-8', errors='surrogateescape')
+
+
+def commit(repo, ref):
+    return text(git(repo, 'rev-parse', '--verify', '--end-of-options', ref + '^{commit}')).strip()
+
+
+def nonempty(value):
+    return isinstance(value, str) and bool(value.strip())
+
+
+def matches(pattern, path):
+    # Segment globs: * and ? never cross '/'; ** matches zero or more segments.
+    p, f = pattern.split('/'), path.split('/')
+    def walk(i, j):
+        if i == len(p):
+            return j == len(f)
+        if p[i] == '**':
+            return walk(i + 1, j) or (j < len(f) and walk(i, j + 1))
+        return j < len(f) and fnmatch.fnmatchcase(f[j], p[i]) and walk(i + 1, j + 1)
+    return walk(0, 0)
+
+
+def policy(config):
+    require(isinstance(config, dict) and isinstance(config.get('review'), dict), 'tracker.json requires review object')
+    cfg = config['review']
+    require(not (set(cfg) - {'max_files_per_group', 'max_diff_bytes_per_group', 'rules', 'groups', 'exclude'}), 'unknown review config key')
+    for key, default in [('max_files_per_group', 8), ('max_diff_bytes_per_group', 120000)]:
+        value = cfg.get(key, default)
+        require(type(value) is int and value > 0, key + ' must be a positive integer')
+    result = dict(max_files_per_group=cfg.get('max_files_per_group', 8),
+                  max_diff_bytes_per_group=cfg.get('max_diff_bytes_per_group', 120000))
+    for kind in ['rules', 'groups', 'exclude']:
+        entries = cfg.get(kind, [])
+        require(isinstance(entries, list), kind + ' must be an array')
+        seen = set()
+        for entry in entries:
+            require(isinstance(entry, dict), kind + ' entries must be objects')
+            keys = {'id', 'paths', 'text'} if kind == 'rules' else {'id', 'paths'} if kind == 'groups' else {'paths', 'reason'}
+            require(set(entry) == keys, kind + ' entry has missing/unknown fields')
+            paths = entry['paths']
+            require(isinstance(paths, list) and paths and all(nonempty(p) and not p.startswith('/') and '..' not in p.split('/') and '\\' not in p for p in paths), 'paths must be nonempty repository-relative globs')
+            if kind != 'exclude':
+                require(nonempty(entry['id']) and entry['id'] not in seen, kind + ' IDs must be unique strings')
+                seen.add(entry['id'])
+            if kind == 'rules':
+                require(nonempty(entry['text']), 'rule text is required')
+            if kind == 'exclude':
+                require(nonempty(entry['reason']), 'exclusion reason is required')
+        result[kind] = entries
+    return result
+
+
+def kit_identity(kit):
+    root = Path(kit)
+    require(root.is_dir(), 'kit directory missing')
+    entries = []
+    for tree in ['commands', 'prompts', 'hooks', 'bin', 'providers']:
+        directory = root / tree
+        require(directory.is_dir(), 'kit tree missing: ' + tree)
+        for path in sorted(directory.rglob('*')):
+            require(not path.is_symlink(), 'kit symlinks are not supported: ' + str(path))
+            if path.is_file():
+                entries.append([str(path.relative_to(root)), bool(path.stat().st_mode & 0o111), hashlib.sha256(path.read_bytes()).hexdigest()])
+    for name in ['constitution.md', 'project-context.md']:
+        path = root / name
+        require(not path.is_symlink(), 'project context must not be a symlink')
+        entries.append([name, hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None])
+    return digest(entries)
+
+
+def inventory(repo, base, head):
+    raw = git(repo, 'diff', '--no-ext-diff', '--name-status', '-z', '--find-renames', base, head, '--').split(b'\0')
+    require(raw.pop() == b'', 'invalid git path stream')
+    items = []
+    while raw:
+        status = text(raw.pop(0))
+        require(status and status[0] in 'AMDRCT', 'unsupported diff status: ' + status)
+        first = text(raw.pop(0))
+        second = text(raw.pop(0)) if status[0] in 'RC' else first
+        old = None if status[0] == 'A' else first
+        new = None if status[0] == 'D' else second
+        paths = list(dict.fromkeys(p for p in [old, new] if p is not None))
+        patch = git(repo, 'diff', '--no-ext-diff', '--no-textconv', '--binary', base, head, '--', *paths)
+        item = dict(status=status, old_path=old, path=new, diff_sha256=hashlib.sha256(patch).hexdigest(), diff_bytes=len(patch))
+        item['id'] = digest(item)
+        items.append(item)
+    return sorted(items, key=lambda item: (item['path'] or item['old_path'], item['id']))
+
+
+def build(repo, base_ref, head_ref, paths):
+    config = load(paths['config'])
+    cfg = policy(config)
+    head, base_tip = commit(repo, head_ref), commit(repo, base_ref)
+    base = text(git(repo, 'merge-base', base_tip, head)).strip()
+    raw_identity = subprocess.run(['git', '-C', str(repo), 'config', '--get', 'remote.origin.url'], capture_output=True)
+    repo_identity = raw_identity.stdout.strip() if raw_identity.returncode == 0 else git(repo, 'rev-parse', '--path-format=absolute', '--git-common-dir').strip()
+    items = inventory(repo, base, head)
+    for item in items:
+        names = [p for p in [item['old_path'], item['path']] if p is not None]
+        applies = lambda rule: any(matches(pattern, name) for pattern in rule['paths'] for name in names)
+        item['rules'] = [rule['id'] for rule in cfg['rules'] if applies(rule)]
+        # First exclusion/group match wins; all matching rules are additive.
+        item['exclusion'] = next((rule['reason'] for rule in cfg['exclude']
+                                  if all(any(matches(pattern, name) for pattern in rule['paths']) for name in names)), None)
+        item['group_hint'] = next((rule['id'] for rule in cfg['groups'] if applies(rule)), 'default')
+    groups = []
+    for hint in dict.fromkeys(item['group_hint'] for item in items if item['exclusion'] is None):
+        current, size = [], 0
+        for item in [i for i in items if i['group_hint'] == hint and i['exclusion'] is None]:
+            if current and (len(current) >= cfg['max_files_per_group'] or size + item['diff_bytes'] > cfg['max_diff_bytes_per_group']):
+                groups.append(dict(label=hint, items=current)); current, size = [], 0
+            current.append(item['id']); size += item['diff_bytes']
+        if current:
+            groups.append(dict(label=hint, items=current))
+    for group in groups:
+        group['id'] = digest(group)
+        group['oversized'] = any(i['diff_bytes'] > cfg['max_diff_bytes_per_group'] for i in items if i['id'] in group['items'])
+    data = dict(version=VERSION, repository_sha256=hashlib.sha256(repo_identity).hexdigest(),
+                head=head, base=base, base_tip=base_tip, plan_sha256=hashlib.sha256(Path(paths['plan']).read_bytes()).hexdigest(),
+                config_sha256=digest(config), kit_sha256=kit_identity(paths['kit']),
+                items=items, groups=groups, rules=cfg['rules'])
+    return dict(identity=digest(data), data=data, inputs=paths)
+
+
+def write_new(path, data):
+    target = Path(path)
+    require(not target.exists(), 'refusing to overwrite review manifest')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp = tempfile.mkstemp(dir=target.parent)
+    try:
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(canonical(data) + b'\n')
+            stream.flush(); os.fsync(stream.fileno())
+        os.link(temp, target)  # exclusive, atomic publication; racing creator loses
+    finally:
+        os.unlink(temp)
+
+
+def validate(manifest, verdict, repo):
+    require(isinstance(verdict, dict), 'verdict must be an object')
+    require(isinstance(verdict.get('gaps_summary'), str), 'gaps_summary must be a string')
+    require(isinstance(verdict.get('gaps'), list) and all(isinstance(s, str) for s in verdict['gaps']), 'gaps must be strings')
+    require(isinstance(verdict.get('minor', []), list) and all(isinstance(s, str) for s in verdict.get('minor', [])), 'minor must be strings')
+    decisions = verdict.get('verdicts')
+    require(isinstance(decisions, dict) and decisions.get('spec') in ['pass', 'fail'] and decisions.get('quality') in ['approved', 'rejected'], 'explicit verdicts required')
+    accepted = decisions['spec'] == 'pass' and decisions['quality'] == 'approved'
+    require(accepted == (len(verdict['gaps']) == 0), 'contradictory verdicts')
+    review = verdict.get('review')
+    require(isinstance(review, dict) and review.get('identity') == manifest['identity'], 'missing/stale review identity')
+    data = manifest['data']; expected = {item['id']: item for item in data['items']}
+    files = review.get('files')
+    require(isinstance(files, list), 'review.files must cover every changed item')
+    seen, failed = set(), []
+    for entry in files:
+        require(isinstance(entry, dict), 'file coverage must be an object')
+        item_id = entry.get('id')
+        require(isinstance(item_id, str) and item_id in expected and item_id not in seen, 'duplicate/unknown coverage item')
+        seen.add(item_id); item = expected[item_id]
+        require(nonempty(entry.get('summary')), 'each coverage item needs an assessment/reason')
+        state = entry.get('status')
+        require(state in ['reviewed', 'excluded', 'failed'], 'invalid coverage status')
+        if item['exclusion'] is not None:
+            require(state == 'excluded' and entry['summary'] == item['exclusion'], 'exclusion must match configured reason')
+        else:
+            require(state != 'excluded', 'reviewer cannot invent exclusions')
+            require(entry.get('rules') == item['rules'], 'coverage must acknowledge every matching rule in order')
+            if state == 'failed':
+                failed.append(item_id)
+    require(seen == set(expected), 'coverage is missing changed files')
+    cross = review.get('cross_file')
+    require(isinstance(cross, dict) and cross.get('status') in ['reviewed', 'failed'] and nonempty(cross.get('summary')), 'cross-file review required')
+    if cross['status'] == 'failed':
+        failed.append('cross_file')
+    findings = review.get('findings')
+    require(isinstance(findings, list), 'structured findings array required')
+    fps = set()
+    for finding in findings:
+        require(isinstance(finding, dict), 'finding must be an object')
+        fp = finding.get('fingerprint')
+        require(nonempty(fp) and fp not in fps, 'unique finding fingerprint required')
+        fps.add(fp)
+        require(finding.get('severity') in ['critical', 'important', 'minor'], 'invalid finding severity')
+        target = verdict.get('minor', []) if finding['severity'] == 'minor' else verdict['gaps']
+        require(any('[' + fp + ']' in entry for entry in target), 'finding absent from matching verdict ledger')
+        item = expected.get(finding.get('item_id'))
+        require(item is not None and item['exclusion'] is None, 'finding must name a reviewed change')
+        side = finding.get('side')
+        require(side in ['old', 'new'], 'finding side must be old/new')
+        path = item['old_path'] if side == 'old' else item['path']
+        require(path is not None, 'finding side does not exist')
+        start, end = finding.get('line_start'), finding.get('line_end')
+        require(type(start) is int and type(end) is int and 1 <= start <= end, 'invalid source range')
+        content = text(git(repo, 'show', (data['base'] if side == 'old' else data['head']) + ':' + path))
+        lines = content.splitlines()
+        require(end <= len(lines) and nonempty(finding.get('quote')), 'source evidence missing/out of range')
+        require(finding['quote'] == '\n'.join(lines[start - 1:end]), 'quote does not match frozen source')
+    # Code-quality findings require structured source evidence; command failures
+    # and plan-wide findings retain the existing textual contract.
+    for entry in verdict['gaps'] + verdict.get('minor', []):
+        match = re.search(r'\[(c8:[^\]]+)\]', entry)
+        if match and 'UNVERIFIED:' not in entry:
+            require(match.group(1) in fps, 'code-quality finding lacks structured source evidence')
+    return dict(identity=manifest['identity'], coverage='incomplete' if failed else 'complete',
+                total=len(expected), excluded=sum(i['exclusion'] is not None for i in expected.values()),
+                failed=failed, accepted=accepted and not failed)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=['create', 'check', 'verify'])
+    for flag in ['repo', 'base', 'head']:
+        parser.add_argument('--' + flag, required=True)
+    for flag in ['config', 'plan', 'kit', 'manifest', 'verdict', 'output']:
+        parser.add_argument('--' + flag)
+    args = parser.parse_args()
+    if args.action == 'create':
+        require(all([args.config, args.plan, args.kit, args.output]), 'create requires config, plan, kit, output')
+        paths = {key: str(Path(getattr(args, key)).resolve()) for key in ['config', 'plan', 'kit']}
+        manifest = build(args.repo, args.base, args.head, paths)
+        write_new(args.output, manifest)
+        print(json.dumps({'identity': manifest['identity'], 'files': len(manifest['data']['items']), 'groups': len(manifest['data']['groups'])}))
+        return 0
+    require(args.manifest and args.verdict, 'check/verify requires manifest and verdict')
+    manifest = load(args.manifest)
+    require(isinstance(manifest, dict) and isinstance(manifest.get('inputs'), dict), 'invalid manifest')
+    current = build(args.repo, args.base, args.head, manifest['inputs'])
+    require(manifest == current, 'review inputs changed; run a new acceptance attempt')
+    result = validate(manifest, load(args.verdict), args.repo)
+    print(json.dumps(result))
+    return 0 if (result['accepted'] if args.action == 'verify' else result['coverage'] == 'complete') else 3
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main())
+    except (ValueError, OSError, KeyError, TypeError, IndexError) as error:
+        print('review-manifest: ' + str(error), file=sys.stderr)
+        sys.exit(4)

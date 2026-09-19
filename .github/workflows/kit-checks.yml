@@ -16,3 +16,5 @@ jobs:
         run: bash tests/kit-bin.test.sh
       - name: Review and recovery regressions (offline git/process fixtures)
         run: python3 tests/review-gates.test.py
+      - name: Review manifest regressions (offline)
+        run: python3 tests/review-manifest.test.py

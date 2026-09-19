@@ -80,6 +80,12 @@ Key properties:
   iterations: repeats are marked, ledgered minors aren't re-litigated,
   and two identical gap sets in a row block the card early instead of
   burning the last iteration.
+- **Review coverage is explicit**: a Git-derived manifest accounts for every
+  changed file, including renames/deletions/binaries. Missing or failed
+  coverage cannot approve a PR. Project rules are additive by path; bounded
+  groups organize related files without losing unmatched ones. Source quotes
+  are checked against frozen blobs. Plan, base/head, config and kit changes
+  invalidate old review results. See [review manifests](docs/review-manifests.md).
 - **Project memory compounds**: acceptance and the test critic surface
   non-obvious, file-anchored discoveries into `.claude/learnings.jsonl`
   (meta is the single writer — dedup by key, staleness via anchored
@@ -105,14 +111,14 @@ scripts/                copied into a consumer's bin/ at adoption:
                         workflow-kit-sync, kit-digest, kit-verify
 docs/                   design-notes.md + tracker.example.*.json +
                         ci-kit-intact.example.yml
-tests/                  kit self-checks (static invariants, run in CI)
+tests/                  static contracts and behavioral checks, run in CI
 ```
 
 ## Requirements
 
 - Claude Code CLI (`claude`) with an API plan that allows spawning
   headless workers (`claude -p`).
-- `gh` (authenticated), `git`, `jq`, `rsync`, and coreutils
+- `gh` (authenticated), `git`, `jq`, Python 3.8+, `rsync`, and coreutils
   (`sha256sum`, for `bin/kit-verify`).
 - A task tracker, one of:
   - **Trello** — an MCP server exposing `mcp__trello__*` tools, e.g.
@@ -194,8 +200,9 @@ with a rationale, merge after review (self-merge is acceptable for
 trivial doc fixes; prompt/behavior changes wait for a human or a second
 agent). Direct pushes to `main` are treated as incidents.
 
-Before opening a PR, run `bash tests/kit-invariants.sh` (needs only
-`bash` + `jq`) — CI runs the same script. It pins the invariants that
+Before opening a PR, run all four suites in [CONTRIBUTING.md](CONTRIBUTING.md)
+(requires `bash`, `jq`, Python 3 and Git). CI runs the same suites.
+The static suite pins the invariants that
 break silently: dangling file references, placeholders a prompt body
 uses but doesn't declare, verdict-contract keys drifting between a
 prompt and the meta code that parses it, invalid JSON artifacts, and
@@ -258,6 +265,9 @@ the worker/critic/acceptance chain always runs on Claude Code.
   (import-linter, packwerk, cargo-deny). When defined it joins the
   mandatory PLAN gates next to `test_cmd`/`lint_cmd`, and `/flow-refactor`
   uses it as a scan signal. Absent = skipped.
+- `review` (tracker.json): path rules, related-file groups, explicit exclusions
+  with reasons, and group limits. All language/provider-specific choices stay
+  in consumer config; defaults review every changed file.
 - `--parallel N` on `/flow-run`: up to 4 cards in flight.
 - `/flow-run --resume <card>`: continue a card whose meta session died
   mid-run — per-card state is journaled to
@@ -287,7 +297,7 @@ effect on behavior.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) — the short version: run all three test
+See [CONTRIBUTING.md](CONTRIBUTING.md) — the short version: run all four test
 suites before every PR, `main` is PR-only, prompt growth is budgeted, and
 mechanical logic belongs in `kit/bin/` with behavioral pins.
 

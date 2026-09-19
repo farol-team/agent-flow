@@ -7,12 +7,13 @@ the README ("Canonical source & staying in sync").
 ## Before every PR
 
 ```sh
-bash tests/kit-invariants.sh   # static contracts (needs bash + jq)
+bash tests/kit-invariants.sh   # static contracts (needs bash + jq + Python 3)
 bash tests/kit-bin.test.sh     # behavioral pins for kit/bin/*
 python3 tests/review-gates.test.py  # offline git/process/GitHub fixtures (Python 3)
+python3 tests/review-manifest.test.py  # coverage, policy, identity and evidence
 ```
 
-CI runs all three suites. Green locally = green in CI; there is no hidden step.
+CI runs all four suites. Green locally = green in CI; there is no hidden step.
 
 ## Rules that surprise people
 
@@ -29,8 +30,8 @@ CI runs all three suites. Green locally = green in CI; there is no hidden step.
   `workflow-kit-sync` checks every consumer's real config.
 - **Mechanical logic goes to `kit/bin/`**, not into command prose: if a
   step has one correct answer (parsing, dedup, selection), it belongs in
-  a tested script the orchestrator calls. Add behavioral pins to
-  `tests/kit-bin.test.sh` in the same PR.
+  a tested script the orchestrator calls. Add behavioral pins to the shell or Python
+  behavioral suites in `tests/` in the same PR.
 - **A new tracker = one provider descriptor** (`kit/providers/<name>.md`:
   the seven semantic ops, ref resolution, capabilities + degradation
   rules — see trello.md/github.md for the shape) plus an example config
@@ -43,7 +44,7 @@ CI runs all three suites. Green locally = green in CI; there is no hidden step.
 ## What a good PR body contains
 
 The rationale (what failure mode this closes, with the incident if there
-is one), the verification evidence (both suites' counts), and — for
+is one), the verification evidence (all suites' counts), and — for
 prompt changes — which contract lines moved. See merged PRs #1–#6 for
 the expected shape; `docs/design-notes.md` records the reasoning behind
 each shipped mechanism (problem → mechanism → deliberate limit) and is

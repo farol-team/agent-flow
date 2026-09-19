@@ -223,3 +223,30 @@ checks send the card to Review. This is stricter than branch protection.
 Renewed approvals and actual end-to-end Claude behavior still need a live
 smoke card. Old two-key acceptance outputs and pre-attempt journals require
 new verification/reconciliation rather than being silently grandfathered in.
+
+## Deterministic review inventory and immutable evidence
+
+**Problem.** A coherent acceptance paragraph does not establish that all
+changed files were inspected. File grouping and policy selection can lose
+files, a model can quote a nonexistent line, and a valid verdict can outlive
+its plan, base or review rules.
+
+**Mechanism.** `review-manifest` (Python standard library) creates a complete
+Git-derived inventory, additive path-rule assignments and bounded related-file
+groups. The acceptance contract accounts for every item and requires a final
+cross-file check. Only consumer configuration may exclude files, with reasons.
+Structured source findings must agree with the ledger and frozen Git blobs.
+A content identity binds the complete manifest to plan/config/kit and Git
+inputs. The merge helper independently rejects incomplete or stale evidence.
+All choices are generic consumer configuration, with no project-specific code.
+
+**Origin.** The separation of deterministic preparation from model reasoning
+is informed by Alibaba Open Code Review's inventory, input identity, grouping
+and rule selection. This is an independent implementation without copied
+source. See [the assessment](open-code-review-assessment.md) for primary links
+and [the public protocol](review-manifests.md) for configuration and migration.
+
+**Limits.** Coverage is an attestation, not proof of review depth. Grouping
+organizes one acceptance session; independent per-group reviewers are not
+required here. Source matching verifies a quote, not its inference. Missing
+coverage fails closed; explicit exclusions remain visible in the denominator.

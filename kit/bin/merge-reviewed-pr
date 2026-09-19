@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
-# Usage: merge-reviewed-pr <pr-url> <worktree> <branch> <base> <reviewed-sha> <require-ci:true|false> <merge|squash|rebase>
+# Usage: merge-reviewed-pr <pr-url> <worktree> <branch> <base> <reviewed-sha> <require-ci:true|false> <merge|squash|rebase> <manifest.json> <verdict.json>
 # Call ONLY after confidence/risk and acceptance gates pass. Exit 0 means
 # GitHub confirmed MERGED, not merely queued. Nonzero -> Review; preserve logs.
 set -euo pipefail
-[ "$#" -eq 7 ] || { echo 'merge-reviewed-pr: expected seven arguments' >&2; exit 1; }
-PR="$1"; TREE="$2"; BRANCH="$3"; BASE="$4"; SHA="$5"; CI="$6"; STRATEGY="$7"
+[ "$#" -eq 9 ] || { echo 'merge-reviewed-pr: expected nine arguments' >&2; exit 1; }
+PR="$1"; TREE="$2"; BRANCH="$3"; BASE="$4"; SHA="$5"; CI="$6"; STRATEGY="$7"; MANIFEST="$8"; VERDICT="$9"
 die() { echo "merge-reviewed-pr: $*" >&2; exit 1; }
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || die 'full reviewed SHA required'
 case "$CI" in true|false) ;; *) die 'require-ci must be true or false' ;; esac
 case "$STRATEGY" in merge|squash|rebase) ;; *) die 'unsupported merge strategy' ;; esac
-VERIFY="$(cd "$(dirname "$0")" && pwd)/verify-pr-head"
+BIN="$(cd "$(dirname "$0")" && pwd)"
+VERIFY="$BIN/verify-pr-head"
+verify_review() {
+  "$BIN/review-manifest" verify --repo "$TREE" --base "origin/$BASE" --head "$SHA" \
+    --manifest "$MANIFEST" --verdict "$VERDICT" >/dev/null
+}
+verify_review
 "$VERIFY" "$PR" "$TREE" "$BRANCH" "$BASE" "$SHA" >/dev/null
 if [ "$CI" = true ]; then
   # Include all reported checks: repos without required-check protection must
@@ -20,6 +26,7 @@ if [ "$CI" = true ]; then
 fi
 # Check again after querying CI; GitHub enforces the same SHA at merge time.
 "$VERIFY" "$PR" "$TREE" "$BRANCH" "$BASE" "$SHA" >/dev/null
+verify_review
 # Keep the branch/worktree for inspection; cleanup belongs to /flow-clean.
 gh pr merge "$PR" "--$STRATEGY" --match-head-commit "$SHA"
 STATE="$(gh pr view "$PR" --json state)"

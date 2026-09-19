@@ -91,7 +91,7 @@ Combinations:
   git worktree) writes code.
 - Do NOT open the PR yourself — only the worker (iteration 1) does that.
 - Do NOT claim acceptance or move a card to `Done` without an acceptance
-  check. A checkout/PR identity mismatch may route directly to `Review`
+  check. A checkout/PR identity mismatch or incomplete review may route to `Review`
   with an explicit "acceptance not established" explanation.
 - Do NOT comment in cards without the `[meta] ` or `[worker] ` prefix.
 - Do NOT continue implementation after `Blocked` — the next action is
@@ -124,9 +124,9 @@ Combinations:
 
 ### Bootstrap (once)
 
-0. Verify `jq` is available (`command -v jq`) — it parses the worker
-   result envelopes and powers the guardrail hooks. Missing → stop with
-   `jq is required by /flow-run. Install it first.`
+0. Verify `jq` and Python 3 are available (`command -v jq`, `python3 --version`).
+   They parse envelopes, power hooks and validate review manifests. Missing → stop with
+   `jq and Python 3 are required by /flow-run. Install missing dependencies first.`
    Read `tracker.provider` from `.claude/tracker.json` and read the
    provider doc `.claude/providers/<provider>.md` — it defines how every
    tracker operation (`list_items`, `read_item`, `create_item`,
@@ -137,7 +137,8 @@ Combinations:
    `Tracker provider '<name>' is not configured/supported. See .claude/providers/.`
    Verify the kit bin scripts exist and are executable
    (`.claude/bin/parse-verdict`, `harvest-learnings`,
-   `render-learnings`). Missing → stop with
+   `render-learnings`, `verify-pr-head`, `merge-reviewed-pr`,
+   `run-stage`, `stage-status`, `review-manifest`). Missing → stop with
    `Kit bin scripts missing: <path>. Re-run bin/workflow-kit-sync.`
    Do not inline a fallback — hand-parsing verdicts is exactly the
    failure mode these scripts pin down.
@@ -436,7 +437,7 @@ So meta journals the whole card state as one JSON object to
 `<target.worker_log_dir>/<card-short>-state.json` — all fields above plus
 `card_short`, `branch`, `worktree`, `base`, `pr_url`,
 `run_id`, `approved_plan` (comment ID + body SHA-256), `attempt_dir`,
-`reviewed_sha` (null until acceptance),
+`reviewed_sha` (null until acceptance), `review_manifest`, `verdict_file`,
 `tdd_critic_rejected` (has the test critic already used its one
 rejection — so a resume at `tdd_critic` cannot grant a second respawn
 budget), and `next_action`.
@@ -516,9 +517,9 @@ carries inline test-first discipline for ungated cards).
    move the card to Ready yourself, or delete the worktree/branch.
    Retain evidence; `/flow-clean` remains the cleanup procedure. A new
    approved run uses a new run ID and a distinct branch/worktree suffix.
-2. **Spawn test critic** — same mechanics as the acceptance check
-   (Step 2.3: versatile+formatting roles, edit tools disallowed, fresh
-   session, `acceptance.model` if set) with body
+2. **Spawn test critic** — use the durable stage runner, versatile+formatting
+   roles, edit tools disallowed, a fresh session and `acceptance.model` if set.
+   Do NOT run Step 2.3 PR/manifest gates here: phase A has no PR yet. Use body
    `.claude/prompts/test-critic.md`. Extract its verdict with
    `.claude/bin/parse-verdict critic <result-json>` (exit 0 →
    `{verdict, findings, summary, learnings}` + `_`-meta; exit 3 →
@@ -638,7 +639,8 @@ crash), never a worker decision.
 
 ### Step 2.3 — Acceptance check (subagent)
 
-For a NEW acceptance attempt only (`stage-status` = `start`), run
+For a NEW acceptance attempt only (`stage-status` = `start`), fetch
+`origin <base>` in the target repo to refresh the base, then run
 `.claude/bin/verify-pr-head <pr_url> <worktree-path> <branch> <base>`
 and persist its output as `reviewed_sha` before launching the audit.
 On resume/consume, retain the ORIGINAL recorded SHA; never relabel an old
@@ -649,6 +651,25 @@ Before consuming AND after acceptance, rerun the helper with the original
 any mismatch/dirty tracked files invalidate the verdict -> Review.
 The audit runs in the verified checkout and must not modify it.
 
+
+**Coverage and input identity (mandatory, including research cards).**
+Read `.claude/prompts/review-protocol.md`. Store the exact approved PLAN body
+in a file alongside the attempt directories (not inside an unclaimed
+attempt). Create one immutable manifest per acceptance iteration:
+
+```bash
+.claude/bin/review-manifest create --repo <worktree-path> --base origin/<base> \
+  --head <reviewed_sha> --plan <plan-file> --config <meta-project>/.claude/tracker.json \
+  --kit <meta-project>/.claude --output <review-manifest-path>
+```
+
+Use absolute artifact paths; persist the manifest path with `reviewed_sha`.
+On resume reuse the original manifest, never overwrite it. Pass its path
+to the audit; it must account for every item, all matched rules and a final
+cross-file check. Large groups may be read in portions, never silently dropped.
+The git-derived inventory includes deletions, renames and binary changes.
+Only configuration can exclude an item, with an explicit recorded reason.
+
 Spawn the acceptance check as a separate subagent — meta does NOT run
 the procedure inline. This keeps verification isolated from
 orchestration and leaves room for multi-model consensus later.
@@ -658,9 +679,11 @@ Build the acceptance prompt by concatenating, in order:
 1. `.claude/prompts/roles/versatile.md` (the audit subagent is doing
    analysis, not code edits — `engineering.md` is the wrong role here)
 2. `.claude/prompts/roles/formatting.md`
-3. `.claude/prompts/acceptance-check.md` with placeholders substituted:
+3. `.claude/prompts/review-protocol.md` verbatim (supply it even when
+   the target repo does not itself contain the kit).
+4. `.claude/prompts/acceptance-check.md` with placeholders substituted:
    `<card-url>`, `<pr_url>`, `<worktree-path>`, `<branch>`, `<base>`,
-   `<PLAN-comment>`, `<prior-findings>`, `<reviewed-sha>`.
+   `<PLAN-comment>`, `<prior-findings>`, `<reviewed-sha>`, `<review-manifest-path>`.
 
 `<prior-findings>` renders `finding_history` — the literal string `none`
 when it is empty (always on iteration 1), else one line per fingerprint:
@@ -706,8 +729,15 @@ PV_EXIT=$?
   failure). Blocked, comment with the log path and the script's stderr,
   skip Phase 3.
 
-The `gaps[]` / `gaps_summary` fed into Step 2.4 below come from this
-output.
+Save the normalized verdict to `<verdict-file>` and validate it before
+Step 2.4 with `.claude/bin/review-manifest check --repo <worktree-path>
+--base origin/<base> --head <reviewed_sha> --manifest <review-manifest-path>
+--verdict <verdict-file>`. Exit 0 means full coverage; use gaps for the
+normal retry/accept decision. Exit 3 means incomplete review -> Review
+with no acceptance claim. Exit 4 means stale/invalid evidence -> Blocked.
+Retain the original manifest and verdict paths in the journal. An empty
+gaps array alone is never acceptance. The merge helper independently
+requires a complete, accepted verdict with unchanged inputs.
 
 **Fingerprints** come from `_fingerprints` (first `[...]` group per
 entry, after the severity prefix — computed by the script). Entries with
@@ -874,9 +904,10 @@ Collect failures into `merge_blockers[]`.
 **`merge_blockers == []`** → **auto-merge**.
 ```bash
 .claude/bin/merge-reviewed-pr <pr_url> <worktree-path> <branch> <base> \
-  <reviewed_sha> <require_ci_green> <strategy>
+  <reviewed_sha> <require_ci_green> <strategy> <review-manifest-path> <verdict-file>
 ```
-The helper rechecks checkout/PR identity and CI, then uses
+The helper rechecks coverage, plan/config/kit identity, checkout/PR/base
+identity and CI, then uses
 `--match-head-commit <reviewed_sha>`. Never invoke a bare merge as fallback.
 Nonzero exit -> Review with the error. Exit 0 confirms GitHub state MERGED;
 a queued merge is NOT Done. Branches/worktrees remain for `/flow-clean`.

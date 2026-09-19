@@ -116,6 +116,7 @@ printf '%s' "$VERDICT" | jq -c --argjson meta "$META" '
   {gaps, gaps_summary,
    minor: (.minor // []),
    verdicts,
+   review: (.review // null),
    learnings: (.learnings // [])}
   | . + {_fingerprints: {gaps: [.gaps[] | fp], minor: [.minor[] | fp]}}
   | . + {_fps: {parsed: ([.["_fingerprints"].gaps[], .["_fingerprints"].minor[]] | map(select(. != null)) | length),

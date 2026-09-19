@@ -58,8 +58,9 @@ sys.exit(99)
         self.git('add', '.')
         self.git('commit', '-qm', 'Initial')
         self.sha = self.git('rev-parse', 'HEAD').stdout.strip()
+        self.git('update-ref','refs/remotes/origin/main',self.sha)
         self.config = {'meta': {'state':'OPEN', 'isDraft':False, 'headRefOid':self.sha,
-                               'headRefName':'flow/card', 'baseRefName':'main'},
+                               'headRefName':'flow/card', 'baseRefName':'main', 'baseRefOid':self.sha},
                        'checks':[{'name':'tests','bucket':'pass'}]}
         self.save()
 
@@ -74,10 +75,24 @@ sys.exit(99)
     def tool(self, name, *args, **kwargs):
         return run(BIN / name, *args, env=self.env, **kwargs)
 
+    def review_args(self):
+        manifest=self.dir/'manifest.json'; verdict=self.dir/'verdict.json'
+        if not manifest.exists():
+            config=self.dir/'tracker.json'; config.write_text(json.dumps({'review':{}}))
+            plan=self.dir/'plan.md'; plan.write_text('Approved plan')
+            p=self.tool('review-manifest','create','--repo',self.repo,'--base','origin/main',
+                        '--head',self.sha,'--config',config,'--plan',plan,'--kit',ROOT/'kit','--output',manifest)
+            self.assertEqual(p.returncode,0,p.stderr)
+            data=json.loads(manifest.read_text())
+            verdict.write_text(json.dumps({'gaps':[],'gaps_summary':'','minor':[], 'verdicts':{'spec':'pass','quality':'approved'},
+                'review':{'identity':data['identity'],'files':[], 'findings':[],
+                          'cross_file':{'status':'reviewed','summary':'No cross-file change'}}}))
+        return manifest,verdict
+
     def merge(self):
         self.save()
         return self.tool('merge-reviewed-pr', 'https://github.com/test/repo/pull/1', self.repo,
-                         'flow/card', 'main', self.sha, 'true', 'merge')
+                         'flow/card', 'main', self.sha, 'true', 'merge', *self.review_args())
 
     def no_merge(self):
         p = self.merge()
@@ -111,6 +126,13 @@ class Verdicts(Fixture):
         for tail in [json.dumps(good), '{"gaps": [], "verdicts": "bad"}', '{broken}', 'BLOCKED: checks failed']:
             self.assertEqual(self.parse(json.dumps(good)+'\n'+tail).returncode, 4)
         self.assertEqual(self.parse(json.dumps(good)+' '+json.dumps(good)).returncode, 4)
+
+    def test_normalization_preserves_review_manifest_report(self):
+        report={'identity':'abc','files':[],'cross_file':{'status':'reviewed','summary':'checked'},'findings':[]}
+        verdict={'gaps':[],'gaps_summary':'','verdicts':{'spec':'pass','quality':'approved'},'review':report}
+        parsed=self.parse(verdict)
+        self.assertEqual(parsed.returncode,0,parsed.stderr)
+        self.assertEqual(json.loads(parsed.stdout)['review'],report)
 
     def test_critic_unknown_or_inconsistent_decisions(self):
         for value in [{'verdict':'not_approved','findings':[]},
@@ -148,6 +170,21 @@ class Merge(Fixture):
         args = json.loads((self.dir/'merge-args').read_text())
         self.assertEqual(args[-2:], ['--match-head-commit',self.sha])
         self.assertNotIn('--delete-branch',args)
+
+    def test_incomplete_review_blocks_merge_even_with_green_ci(self):
+        _,verdict=self.review_args()
+        data=json.loads(verdict.read_text()); data['review']['cross_file']['status']='failed'
+        verdict.write_text(json.dumps(data))
+        self.no_merge()
+
+    def test_stale_plan_blocks_merge_even_with_green_ci(self):
+        self.review_args()
+        (self.dir/'plan.md').write_text('A different approved plan')
+        self.no_merge()
+
+    def test_changed_base_blocks_merge(self):
+        self.config['meta']['baseRefOid']='f'*40
+        self.no_merge()
 
     def test_wrong_remote_sha(self):
         self.config['meta']['headRefOid']='f'*40
@@ -194,7 +231,7 @@ class Merge(Fixture):
     def test_explicit_ci_opt_out(self):
         self.config['checks']=[]; self.save()
         p=self.tool('merge-reviewed-pr','https://github.com/test/repo/pull/1',self.repo,
-                    'flow/card','main',self.sha,'false','squash')
+                    'flow/card','main',self.sha,'false','squash',*self.review_args())
         self.assertEqual(p.returncode,0,p.stderr)
 
 

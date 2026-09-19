@@ -14,6 +14,7 @@ Placeholders (replaced by meta before spawn):
 - `<branch>` — branch name (`origin/<base>..<branch>` is the diff)
 - `<base>` — the PR's base branch (`main` unless the PLAN sets `Base:`)
 - `<PLAN-comment>` — the original `[meta] PLAN`, full text
+- `<review-manifest-path>` — absolute path to the immutable inventory and rules
 - `<reviewed-sha>` — full PR head SHA verified and recorded by meta
 - `<prior-findings>` — meta-rendered history of this card's findings
   from earlier iterations (`none` on iteration 1)
@@ -31,6 +32,17 @@ disabled — `--disallowedTools Edit Write MultiEdit NotebookEdit`).
 <PLAN-comment>
 
 # Procedure
+
+Read `<review-manifest-path>` and follow the review coverage/source evidence
+protocol supplied with this prompt.
+The manifest fixes the reviewed source, all changed files, file groups and
+applicable project rules. Inspect every non-excluded item group by group;
+read related producer/consumer/test files together. Then perform the whole
+change checks below, including interactions BETWEEN groups. Rules from the
+manifest are additive: they never replace the constitution or these checks.
+Report explicit coverage for EVERY item, including deletions and binary
+changes. If time/context/tools are insufficient, report failed coverage;
+never omit a file or invent an exclusion. This also applies to research.
 
 **If the plan is a `[meta] RESEARCH PLAN`** (first line), run the
 "Research mode" checklist at the bottom of this file INSTEAD of the
@@ -242,7 +254,7 @@ CLI's `--output-format json` envelope — must be exactly one line: a
 single-line JSON object with these keys and nothing else:
 
 ```
-{"gaps":["<SEV [<fingerprint>]: gap 1>",...],"gaps_summary":"<short>; <short>; ...","minor":["[<fingerprint>] <minor 1>",...],"verdicts":{"spec":"pass|fail","quality":"approved|rejected"},"learnings":[{"type":"pitfall","key":"<kebab>","insight":"<one sentence>","confidence":8,"files":["<repo-relative>"]}]}
+{"gaps":["<SEV [<fingerprint>]: gap 1>",...],"gaps_summary":"<short>; <short>; ...","minor":["[<fingerprint>] <minor 1>",...],"verdicts":{"spec":"pass|fail","quality":"approved|rejected"},"review":{"identity":"<manifest identity>","files":[],"cross_file":{"status":"reviewed|failed","summary":"<integration assessment>"},"findings":[]},"learnings":[{"type":"pitfall","key":"<kebab>","insight":"<one sentence>","confidence":8,"files":["<repo-relative>"]}]}
 ```
 
 - Inside JSON strings, quote code as it is — never backslash-escape
@@ -251,9 +263,11 @@ single-line JSON object with these keys and nothing else:
   verdict unparseable (agent-flow#13; the reader repairs the common case,
   but a contract nobody bends is better than a repair).
 
+- `review` — REQUIRED. Populate files and structured source findings per
+  `review-protocol.md`; the empty arrays above are shape examples, not defaults.
 - `gaps` — critical + important findings only, each formatted
   `CRITICAL [<fingerprint>]: …` / `IMPORTANT [<fingerprint>]: …`.
-  Empty array means acceptance passes.
+  Empty gaps requires full, validated review coverage before acceptance.
 - `gaps_summary` — one-line `; `-joined short forms (e.g.
   `"Files: queries.rs missing; Constitution P3: job on default queue"`)
   used by meta for the audit comment and session-log. `""` when
