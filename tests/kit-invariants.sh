@@ -32,7 +32,11 @@ command -v jq >/dev/null 2>&1 || { echo "FAIL: jq is required (it is already a k
 
 for f in kit/hooks/*.sh kit/bin/* scripts/*; do
   [ -f "$f" ] || continue
-  if bash -n "$f" 2>/dev/null; then pass; else fail "$f: bash syntax error (bash -n)"; fi
+  if head -n1 "$f" | grep -q python3; then
+    if python3 -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' "$f"; then pass; else fail "$f: Python syntax error"; fi
+  else
+    if bash -n "$f" 2>/dev/null; then pass; else fail "$f: bash syntax error (bash -n)"; fi
+  fi
   if [ -x "$f" ]; then pass; else fail "$f: not executable (chmod +x, adoption step depends on it)"; fi
 done
 
@@ -117,7 +121,7 @@ done
 # One-directional by design: declared-but-unused is legal (e.g. <branch>
 # declared for context), used-but-undeclared is the bug.
 
-KNOWN_PLACEHOLDERS="card-url pr_url worktree-path branch base PLAN-comment prior-findings learnings iter MAX_ITER gaps-list critic-findings"
+KNOWN_PLACEHOLDERS="card-url pr_url worktree-path branch base PLAN-comment prior-findings review-manifest-path reviewed-sha learnings iter MAX_ITER gaps-list critic-findings"
 
 for f in kit/prompts/*.md; do
   grep -q '^Placeholders' "$f" || continue   # roles/ and non-template files
@@ -139,7 +143,7 @@ done
 # produces the verdict must mention every one, and vice versa is pinned by
 # the contract lines themselves. Catches one side of the contract moving.
 
-for key in gaps gaps_summary minor verdicts learnings; do
+for key in gaps gaps_summary minor verdicts learnings review; do
   if grep -q "\"$key\"" kit/prompts/acceptance-check.md; then pass; else
     fail "acceptance-check.md: verdict key \"$key\" (parsed by flow-run) missing from the output contract"
   fi
@@ -151,7 +155,7 @@ for key in verdict findings summary learnings; do
 done
 
 # The orchestrator must reference every key it is documented to parse.
-for key in gaps gaps_summary minor verdicts learnings; do
+for key in gaps gaps_summary minor verdicts learnings review; do
   if grep -q "\`$key" kit/commands/flow-run.md || grep -q "\"$key\"" kit/commands/flow-run.md || grep -qE "(^|[^a-z_])${key}\[?\]?" kit/commands/flow-run.md; then
     pass
   else
@@ -180,6 +184,7 @@ check_budget kit/commands/flow-refactor.md    210
 check_budget kit/prompts/acceptance-check.md    470
 check_budget kit/prompts/card-eval.md           430
 check_budget kit/prompts/plan-format.md         320
+check_budget kit/prompts/review-protocol.md    180
 check_budget kit/prompts/test-critic.md         130
 check_budget kit/prompts/worker-iter1.md        150
 check_budget kit/prompts/worker-iterN.md        140

@@ -75,5 +75,12 @@
   "comment_prefixes": {
     "meta": "[meta] ",
     "worker": "[worker] "
+  },
+  "review": {
+    "max_files_per_group": 8,
+    "max_diff_bytes_per_group": 120000,
+    "rules": [],
+    "groups": [],
+    "exclude": []
   }
 }

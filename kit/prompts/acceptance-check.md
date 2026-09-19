@@ -14,6 +14,8 @@ Placeholders (replaced by meta before spawn):
 - `<branch>` — branch name (`origin/<base>..<branch>` is the diff)
 - `<base>` — the PR's base branch (`main` unless the PLAN sets `Base:`)
 - `<PLAN-comment>` — the original `[meta] PLAN`, full text
+- `<review-manifest-path>` — absolute path to the immutable inventory and rules
+- `<reviewed-sha>` — full PR head SHA verified and recorded by meta
 - `<prior-findings>` — meta-rendered history of this card's findings
   from earlier iterations (`none` on iteration 1)
 
@@ -31,12 +33,26 @@ disabled — `--disallowedTools Edit Write MultiEdit NotebookEdit`).
 
 # Procedure
 
+Read `<review-manifest-path>` and follow the review coverage/source evidence
+protocol supplied with this prompt.
+The manifest fixes the reviewed source, all changed files, file groups and
+applicable project rules. Inspect every non-excluded item group by group;
+read related producer/consumer/test files together. Then perform the whole
+change checks below, including interactions BETWEEN groups. Rules from the
+manifest are additive: they never replace the constitution or these checks.
+Report explicit coverage for EVERY item, including deletions and binary
+changes. If time/context/tools are insufficient, report failed coverage;
+never omit a file or invent an exclusion. This also applies to research.
+
 **If the plan is a `[meta] RESEARCH PLAN`** (first line), run the
 "Research mode" checklist at the bottom of this file INSTEAD of the
 checks below, then emit the same JSON verdict. The checks below are
 for code PLANs.
 
-`cd <worktree-path>` and run the eight checks below in order. Do NOT
+`cd <worktree-path>`; verify `git rev-parse HEAD` is `<reviewed-sha>`
+and `git diff --quiet HEAD --` succeeds before AND after the checks.
+Mismatch or dirty tracked files -> `BLOCKED: checkout changed`.
+Run the eight checks below in order. Do NOT
 short-circuit — the human deserves a full picture if multiple things
 broke.
 
@@ -238,7 +254,7 @@ CLI's `--output-format json` envelope — must be exactly one line: a
 single-line JSON object with these keys and nothing else:
 
 ```
-{"gaps":["<SEV [<fingerprint>]: gap 1>",...],"gaps_summary":"<short>; <short>; ...","minor":["[<fingerprint>] <minor 1>",...],"verdicts":{"spec":"pass|fail","quality":"approved|rejected"},"learnings":[{"type":"pitfall","key":"<kebab>","insight":"<one sentence>","confidence":8,"files":["<repo-relative>"]}]}
+{"gaps":["<SEV [<fingerprint>]: gap 1>",...],"gaps_summary":"<short>; <short>; ...","minor":["[<fingerprint>] <minor 1>",...],"verdicts":{"spec":"pass|fail","quality":"approved|rejected"},"review":{"identity":"<manifest identity>","files":[],"cross_file":{"status":"reviewed|failed","summary":"<integration assessment>"},"findings":[]},"learnings":[{"type":"pitfall","key":"<kebab>","insight":"<one sentence>","confidence":8,"files":["<repo-relative>"]}]}
 ```
 
 - Inside JSON strings, quote code as it is — never backslash-escape
@@ -247,9 +263,11 @@ single-line JSON object with these keys and nothing else:
   verdict unparseable (agent-flow#13; the reader repairs the common case,
   but a contract nobody bends is better than a repair).
 
+- `review` — REQUIRED. Populate files and structured source findings per
+  `review-protocol.md`; the empty arrays above are shape examples, not defaults.
 - `gaps` — critical + important findings only, each formatted
   `CRITICAL [<fingerprint>]: …` / `IMPORTANT [<fingerprint>]: …`.
-  Empty array means acceptance passes.
+  Empty gaps requires full, validated review coverage before acceptance.
 - `gaps_summary` — one-line `; `-joined short forms (e.g.
   `"Files: queries.rs missing; Constitution P3: job on default queue"`)
   used by meta for the audit comment and session-log. `""` when
@@ -276,8 +294,10 @@ single-line JSON object with these keys and nothing else:
   staleness detection; at least one). Meta appends them to the project
   learnings file and feeds relevant ones to future workers and triage.
 
-Empty `gaps` is the "pass" signal. If you could not run the checks at
-all (e.g., worktree missing, `git` failed before you started), finish
+Approval requires empty `gaps`, `spec: "pass"`, and `quality: "approved"`.
+Both verdicts are mandatory. Non-empty gaps require at least one rejecting
+verdict; contradictions are invalid. Emit exactly ONE verdict object.
+If you could not run the checks at all (e.g., worktree missing, `git` failed before you started), finish
 with `BLOCKED: <reason>` per the formatting role instead of the JSON
 line. Anything else — extra prose, multiple lines — makes your verdict
 unusable and blocks the card.

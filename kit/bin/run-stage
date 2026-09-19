@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Usage: run-stage <absolute-attempt-dir> -- <command> [args...]
+# Durable, single-launch claim per stage attempt. Existing dir ALWAYS refuses
+# execution (exit 73); use stage-status, never delete a claim to retry.
+# stdout/stderr and exit-code are kept for consumption after meta crashes.
+set -euo pipefail
+[ "$#" -ge 3 ] && [ "$2" = -- ] || { echo 'usage: run-stage <absolute-dir> -- command [args...]' >&2; exit 2; }
+DIR="$1"; shift 2
+case "$DIR" in /*) ;; *) echo 'run-stage: absolute directory required' >&2; exit 2 ;; esac
+mkdir -p "$(dirname "$DIR")"
+mkdir "$DIR" 2>/dev/null || { echo 'run-stage: attempt already claimed; inspect stage-status' >&2; exit 73; }
+# If killed between claim and owner write, status is inspect, never start.
+START="$(LC_ALL=C ps -p $$ -o lstart=)"
+jq -n --argjson pid "$$" --arg host "$(hostname)" --arg start "$START" \
+  '{pid:$pid,host:$host,start:$start}' > "$DIR/owner.json.tmp"
+mv "$DIR/owner.json.tmp" "$DIR/owner.json"
+# On interruption leave an incomplete claim. Descendants may still be alive;
+# absence of this wrapper alone must never authorize another worker.
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
+set +e
+"$@" > "$DIR/result.json" 2> "$DIR/stderr.log" &
+CHILD=$!
+wait "$CHILD"
+RC=$?
+set -e
+printf '%s\n' "$RC" > "$DIR/exit-code.tmp"
+mv "$DIR/exit-code.tmp" "$DIR/exit-code"
+exit "$RC"

@@ -1,0 +1,23 @@
+{
+  "review": {
+    "max_files_per_group": 8,
+    "max_diff_bytes_per_group": 120000,
+    "rules": [
+      {
+        "id": "public-contract",
+        "paths": ["src/api/**", "tests/api/**"],
+        "text": "Check compatibility for existing callers and tests for invalid inputs."
+      },
+      {
+        "id": "persistent-data",
+        "paths": ["src/storage/**", "migrations/**"],
+        "text": "Check transaction boundaries, failure recovery and compatibility with existing stored data."
+      }
+    ],
+    "groups": [
+      {"id": "api-and-tests", "paths": ["src/api/**", "tests/api/**"]},
+      {"id": "storage-and-migrations", "paths": ["src/storage/**", "migrations/**"]}
+    ],
+    "exclude": []
+  }
+}
