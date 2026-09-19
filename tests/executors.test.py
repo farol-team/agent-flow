@@ -28,7 +28,7 @@ import json, os, pathlib, subprocess, sys, time
 root = pathlib.Path(os.environ['FIXTURE'])
 args = sys.argv[1:]
 with (root/'calls').open('a') as f:
-    f.write(json.dumps({'cli': pathlib.Path(sys.argv[0]).name, 'args': args, 'cwd': os.getcwd(), 'prompt': sys.stdin.read()})+'\n')
+    f.write(json.dumps({'cli': pathlib.Path(sys.argv[0]).name, 'args': args, 'cwd': os.getcwd(), 'prompt': sys.stdin.read(), 'temp': os.environ.get('TMPDIR'), 'cache': os.environ.get('XDG_CACHE_HOME')})+'\n')
 mode = os.environ.get('MODE', 'ok')
 if mode == 'timeout':
     child = subprocess.Popen(['sleep', '60'])
@@ -128,7 +128,21 @@ else:
             p = self.launch(role, role=role)
             self.assertEqual(p.returncode, 0, p.stderr)
             args = self.calls()[-1]['args']
-            self.assertIn('read-only', args)
+            self.assertNotIn('--sandbox', args)
+            self.assertIn('default_permissions="agent-flow-audit"', args)
+            request = json.loads((self.root/role/'request.json').read_text())
+            scratch = Path(request['audit_temp'])
+            self.addCleanup(lambda p=scratch: __import__('shutil').rmtree(p, ignore_errors=True))
+            self.assertTrue(scratch.is_dir())
+            self.assertEqual(scratch.stat().st_mode & 0o777, 0o700)
+            self.assertFalse(scratch.is_relative_to(self.repo))
+            self.assertEqual(self.calls()[-1]['temp'], str(scratch))
+            self.assertEqual(self.calls()[-1]['cache'], str(scratch/'cache'))
+            permissions = next(a for a in args if a.startswith('permissions='))
+            self.assertIn('":root" = "read"', permissions)
+            self.assertIn(json.dumps(str(scratch)) + ' = "write"', permissions)
+            self.assertIn('enabled = false', permissions)
+            self.assertNotIn(str(self.repo), permissions)
             self.assertNotIn('danger-full-access', args)
             self.assertNotIn('resume', args)
 
