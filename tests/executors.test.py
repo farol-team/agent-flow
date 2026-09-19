@@ -239,6 +239,61 @@ else:
         state = subprocess.run(['ps', '-p', str(pid), '-o', 'stat='], text=True, capture_output=True).stdout.strip()
         self.assertTrue(not state or state.startswith('Z'), state)
 
+    def test_preflight_selects_both_roles_without_launching(self):
+        self.cfg['worker']['executor'] = 'codex'
+        self.cfg['acceptance']['model'] = 'audit-model'
+        self.config.write_text(json.dumps(self.cfg))
+        p = self.run_tool('check', '--config', self.config)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        resolved = json.loads(p.stdout)
+        self.assertEqual(resolved['worker']['executor'], 'codex')
+        self.assertEqual(resolved['acceptance']['executor'], 'claude')
+        self.assertEqual(resolved['acceptance']['model'], 'audit-model')
+        self.assertEqual(len(resolved['config_sha256']), 64)
+        self.assertFalse((self.root/'calls').exists())
+
+    def test_missing_required_executor_and_invalid_worker_block(self):
+        del self.cfg['executor']
+        self.assertNotEqual(self.launch('missing').returncode, 0)
+        self.cfg['executor'] = {'default': 'claude'}
+        self.cfg['worker'] = []
+        p = self.launch('bad-worker', role='acceptance')
+        self.assertNotEqual(p.returncode, 0)
+        self.assertNotIn('Traceback', p.stderr)
+        self.assertFalse((self.root/'calls').exists())
+
+    def test_bootstrap_config_pin_prevents_new_launch_after_drift(self):
+        self.config.write_text(json.dumps(self.cfg))
+        pin = json.loads(self.run_tool('check', '--config', self.config).stdout)['config_sha256']
+        self.cfg['worker']['model'] = 'different'
+        self.config.write_text(json.dumps(self.cfg))
+        p = self.run_tool('run', '--config', self.config, '--config-sha256', pin,
+                          '--role', 'worker', '--worktree', self.repo,
+                          '--attempt', self.root/'attempt', '--prompt-file', self.prompt)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertFalse((self.root/'attempt').exists())
+
+    def test_resume_rejects_tampered_request(self):
+        self.assertEqual(self.launch('first').returncode, 0)
+        p = self.root/'first/request.json'
+        request = json.loads(p.read_text())
+        request['prompt'] = 'Changed after execution'
+        p.write_text(json.dumps(request))
+        self.assertNotEqual(self.launch('second', resume='first').returncode, 0)
+        self.assertEqual(len(self.calls()), 1)
+
+    def test_resume_rejects_different_worktree(self):
+        self.assertEqual(self.launch('first').returncode, 0)
+        self.repo = self.root/'another-repo'
+        subprocess.run(['git', 'init', '-q', str(self.repo)], check=True)
+        self.assertNotEqual(self.launch('second', resume='first').returncode, 0)
+        self.assertEqual(len(self.calls()), 1)
+
+    def test_codex_timeout_cannot_consume_partial_output(self):
+        self.cfg['executor'].update(default='codex', timeout_seconds=1)
+        self.assertEqual(self.launch(mode='timeout').returncode, 124)
+        self.assertTrue(self.result()['is_error'])
+
     def test_normalized_codex_verdict_keeps_gate_and_unknown_cost(self):
         self.cfg['executor']['default'] = 'codex'
         for i, verdict in enumerate([
@@ -252,6 +307,22 @@ else:
             if i == 0:
                 self.assertIsNone(json.loads(p.stdout)['_cost_usd'])
                 self.assertEqual(json.loads(p.stdout)['_executor'], 'codex')
+
+
+class Protocol(unittest.TestCase):
+    def test_controller_uses_shared_executor_for_all_stages(self):
+        flow = (ROOT/'kit/commands/flow-run.md').read_text()
+        self.assertNotIn('-- claude', flow)
+        for role in ['worker', 'critic', 'acceptance']:
+            self.assertIn('run-agent run --role ' + role, flow)
+        self.assertIn('--config-sha256 <recorded-config-sha>', flow)
+        self.assertIn('Do not overwrite `worker_attempt` with the critic attempt', flow)
+        self.assertIn('unknown_cost_runs', flow)
+
+    def test_fresh_tdd_implementation_has_plan_and_requires_approval(self):
+        prompt = (ROOT/'kit/prompts/worker-impl.md').read_text()
+        self.assertIn('<PLAN-comment>', prompt.split('---', 1)[1])
+        self.assertIn('Exhausted spec revisions never authorize implementation', prompt)
 
 
 if __name__ == '__main__':

@@ -87,5 +87,10 @@
     "rules": [],
     "groups": [],
     "exclude": []
+  },
+  "executor": {
+    "default": "claude",
+    "timeout_seconds": 1800,
+    "codex_sandbox": "workspace-write"
   }
 }

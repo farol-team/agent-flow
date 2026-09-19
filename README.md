@@ -1,6 +1,6 @@
 # agent-workflow
 
-A board-driven, multi-agent development workflow for Claude Code —
+A board-driven, multi-agent development workflow with Claude Code or Codex executors —
 works with **Trello** (via MCP) or **GitHub Issues** (via `gh`, no MCP
 needed); other trackers are one provider descriptor away.
 A meta-agent triages cards into reviewable plans, a human approves by
@@ -66,13 +66,12 @@ Key properties:
   `.claude/constitution.md`; every plan carries a per-article gate and
   the acceptance check re-verifies the diff. See
   `constitution-template.md` and `examples/constitution-rodnik-web.md`.
-- **Workers are guardrailed** (not sandboxed): fresh `claude -p` in a
-  git worktree; a PreToolUse hook rejects edits outside the plan's file
-  manifest and another blocks history rewrites / self-merge. These
-  hooks catch a well-meaning worker drifting off-plan — they are NOT a
-  security boundary (a plain Bash file write never hits the scope hook,
-  and light obfuscation slips the git regexes); the acceptance check
-  re-enforces scope post-hoc. See "Threat model" below.
+- **Executors are configurable**: choose Claude or Codex globally, or use
+  different executors for workers and audits. Claude uses its existing
+  scope/git hooks; Codex uses an explicit sandbox and does not run Claude
+  hooks. Acceptance rechecks scope, source identity and complete coverage
+  for either executor. See [executor configuration](docs/executors.md) and
+  "Threat model" below for capability differences.
 - **Verdicts require evidence**: no "should pass" anywhere in the chain —
   fresh command output or it didn't happen. Acceptance findings must
   quote the motivating line (unquotable → demoted to minor), and every
@@ -116,8 +115,9 @@ tests/                  static contracts and behavioral checks, run in CI
 
 ## Requirements
 
-- Claude Code CLI (`claude`) with an API plan that allows spawning
-  headless workers (`claude -p`).
+- The configured executor CLI(s), authenticated: Claude Code (`claude`)
+  and/or Codex (`codex`). A Codex-only configuration does not require Claude.
+  See [executors](docs/executors.md) for permissions and session requirements.
 - `gh` (authenticated), `git`, `jq`, Python 3.8+, `rsync`, and coreutils
   (`sha256sum`, for `bin/kit-verify`).
 - A task tracker, one of:
@@ -141,12 +141,16 @@ What the kit defends against, and what it deliberately does not:
   catch a *well-meaning* worker going off-plan. That is the designed
   failure mode, and the layers are redundant on purpose.
 - **NOT defended: a malicious card.** Card text, PLAN comments and PR
-  bodies are injected into worker/acceptance prompts, and workers run
-  with `--permission-mode bypassPermissions` inside the worktree. A card
+  bodies are injected into worker/acceptance prompts. Claude workers run
+  with `--permission-mode bypassPermissions`; Codex workers default to
+  `workspace-write`, or explicitly configured `danger-full-access`. A card
   authored by an attacker is a prompt injection with shell access.
   **The tracker is a trusted input** — restrict board/repo write access
   to people you'd give a shell.
-- **NOT defended: a malicious worker.** `git-guard`/`scope-guard` are
+- **NOT defended: a malicious worker.** Codex's filesystem sandbox is not
+  a plan-path/git-intent guard; Claude hooks do not run in Codex. External
+  tools and inherited credentials remain part of the execution environment.
+  `git-guard`/`scope-guard` are
   regex/manifest checks on tool-call arguments, and real bypasses are
   trivial (verified): `scope-guard` matches only the edit tools, so a
   Bash `echo hacked > file` writes anywhere unchecked; `git-guard`
@@ -200,7 +204,7 @@ with a rationale, merge after review (self-merge is acceptable for
 trivial doc fixes; prompt/behavior changes wait for a human or a second
 agent). Direct pushes to `main` are treated as incidents.
 
-Before opening a PR, run all four suites in [CONTRIBUTING.md](CONTRIBUTING.md)
+Before opening a PR, run all five suites in [CONTRIBUTING.md](CONTRIBUTING.md)
 (requires `bash`, `jq`, Python 3 and Git). CI runs the same suites.
 The static suite pins the invariants that
 break silently: dangling file references, placeholders a prompt body
@@ -246,8 +250,11 @@ Grant the agent read access to this repo and say:
 > configuration lives in tracker.json / constitution.md / project-context.md.
 
 The kit is agent-agnostic on the meta side: any agent that can call the
-tracker (MCP or `gh`), run `claude -p` and `jq` can act as the orchestrator —
-the worker/critic/acceptance chain always runs on Claude Code.
+tracker (MCP or `gh`) and call the kit scripts can act as the orchestrator.
+`run-agent` launches the configured Claude or Codex worker/critic/acceptance
+processes with one normalized result contract. Codex can read the command
+Markdown explicitly; `.claude/commands` are not automatically Codex slash
+commands. See the [Codex entry instructions](docs/executors.md#using-codex-as-the-orchestrator).
 
 ## Tuning
 
@@ -259,6 +266,9 @@ the worker/critic/acceptance chain always runs on Claude Code.
   must pass; absent/skipped/pending checks route to Review. Setting
   `require_ci_green: false` is the explicit opt-out. Acceptance is bound
   to the full PR head SHA, enforced again at merge. Research cards never auto-merge.
+- `executor`: default `claude` or `codex`, a wall-clock timeout, and Codex
+  worker sandbox. `worker.executor` / `acceptance.executor` override the default;
+  the test critic follows acceptance. All stages retain the same review gates.
 - `worker.model` / `acceptance.model`: per-stage model override (e.g. a
   cheaper model for acceptance).
 - `targets[<name>].arch_cmd` (optional): an architecture-contract gate
@@ -272,7 +282,7 @@ the worker/critic/acceptance chain always runs on Claude Code.
 - `/flow-run --resume <card>`: continue a card whose meta session died
   mid-run — per-card state is journaled to
   `<worker_log_dir>/<card-short>-state.json` at every phase boundary.
-  Each Claude attempt has a durable, non-reusable directory: resume waits
+  Each executor attempt has a durable, non-reusable directory: resume waits
   for a live process or consumes its recorded result instead of launching
   it again. Incomplete claims require inspection; failed journal writes
   stop new side effects. See `docs/design-notes.md` for recovery limits.
@@ -297,7 +307,7 @@ effect on behavior.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) — the short version: run all four test
+See [CONTRIBUTING.md](CONTRIBUTING.md) — the short version: run all five test
 suites before every PR, `main` is PR-only, prompt growth is budgeted, and
 mechanical logic belongs in `kit/bin/` with behavioral pins.
 

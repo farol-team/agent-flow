@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# parse-verdict — normalize a subagent verdict out of a Claude CLI JSON
-# envelope. Mechanical half of flow-run Step 2.3 / 2.1a: the orchestrator
+# parse-verdict — normalize a subagent verdict out of a normalized executor JSON
+# envelope (legacy Claude envelopes also accepted). Mechanical half of
+# flow-run Step 2.3 / 2.1a: the orchestrator
 # (an LLM) should classify and decide, not regex-parse.
 #
 # Usage: parse-verdict acceptance <envelope.json>
@@ -10,9 +11,9 @@
 #   acceptance: {gaps, gaps_summary, minor, verdicts, learnings,
 #                _fingerprints: {gaps: [fp|null,...], minor: [fp|null,...]},
 #                _fps: {parsed, total},
-#                _session_id, _cost_usd, _num_turns}
+#                _session_id, _cost_usd, _num_turns, _executor, _usage}
 #   critic:     {verdict, findings, summary, learnings,
-#                _session_id, _cost_usd, _num_turns}
+#                _session_id, _cost_usd, _num_turns, _executor, _usage}
 # Exit 3: subagent said `BLOCKED: <reason>` → stdout {"blocked": "<reason>", ...meta}
 # Exit 4: envelope/verdict unusable (crash path) → reason on stderr.
 #
@@ -31,7 +32,7 @@ command -v jq >/dev/null 2>&1 || die "jq is required"
 jq -s -e 'length == 1 and (.[0] | type == "object")' "$ENVELOPE" >/dev/null 2>&1 || die "envelope is not valid JSON: $ENVELOPE"
 jq -e '.is_error != true and (.result | type == "string")' "$ENVELOPE" >/dev/null 2>&1 || die "envelope reports an error or result is not text"
 
-META="$(jq '{_session_id: (.session_id // null), _cost_usd: (.total_cost_usd // 0), _num_turns: (.num_turns // null)}' "$ENVELOPE")"
+META="$(jq '{_session_id: (.session_id // null), _cost_usd: (if has("total_cost_usd") then .total_cost_usd else 0 end), _executor: (.executor // "claude"), _usage: (.usage // null), _num_turns: (.num_turns // null)}' "$ENVELOPE")"
 RESULT="$(jq -r '.result // empty' "$ENVELOPE")"
 [ -n "$RESULT" ] || die "envelope has empty result"
 

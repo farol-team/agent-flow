@@ -6,6 +6,30 @@ design. Newest first. (The adoption guide lives in the README; the
 reference configs are `docs/tracker.example.trello.json` and
 `docs/tracker.example.github.json`.)
 
+## Executor selection without a second orchestration protocol
+
+**Problem.** Worker, test-critic and acceptance launches assumed Claude's
+flags and JSON envelope. Merely replacing the executable with Codex would
+misread its event stream, silently lose limits/hooks, or resume the wrong
+provider's session.
+
+**Mechanism.** `run-agent` resolves the configured executor per role and
+uses the existing `run-stage` atomic claim. Each attempt records a frozen
+request, raw provider logs and one normalized result. Codex requires a
+complete successful turn and a matching final-message artifact; commentary
+or partial output cannot become approval. Resume names a completed worker
+attempt and validates provider, worktree, configuration and session identity.
+Critic/acceptance always start fresh. All verdict, manifest and merge gates
+remain shared. A common wall-clock deadline stops the provider process group.
+
+**Limit.** Claude hooks and turn budgets are not Codex capabilities. Codex
+uses an explicit workspace/read-only sandbox; `max_turns` remains Claude-only.
+Permission failures block, never trigger an unrestricted retry. Cost and
+turn count absent from Codex output remain unknown; token usage is retained.
+This adapter is not a security boundary against hostile tools, credentials
+or workers. The common config block is now an explicit upgrade requirement.
+See [executor configuration and operational limits](executors.md).
+
 ## /flow-refactor: the contour learns to remove
 
 **Problem.** Every command in the flow adds code; nothing ever proposes
@@ -200,7 +224,7 @@ tracked checkout, branch, base and remote SHA before and after acceptance.
 CI unless explicitly disabled, and uses GitHub's `--match-head-commit`.
 Queued merges are not Done. Branch cleanup is separate.
 
-Every Claude invocation uses `run-stage` with a persisted, unique attempt
+Every executor invocation uses `run-stage` with a persisted, unique attempt
 directory and an atomic mkdir claim. Result logs and the terminal exit code
 survive meta failure. `stage-status` returns start, wait, consume or inspect;
 an ambiguous/dead wrapper is NOT permission to repeat external side effects.

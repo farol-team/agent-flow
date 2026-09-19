@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+"""Run a configured Claude/Codex stage under run-stage's durable claim.
+
+run-agent check --config tracker.json
+run-agent run --config tracker.json --role worker|critic|acceptance
+  --worktree DIR --prompt-file FILE --attempt ABSOLUTE_DIR [--resume-from DIR]
+stdout belongs to run-stage; the normalized envelope is attempt/result.json.
+"""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import subprocess
+import sys
+import uuid
+
+BIN = Path(__file__).resolve().parent
+
+
+def require(ok, message):
+    if not ok:
+        raise ValueError(message)
+
+
+def load(path):
+    def unique(pairs):
+        obj = {}
+        for k, v in pairs:
+            require(k not in obj, 'duplicate JSON key: ' + k)
+            obj[k] = v
+        return obj
+    return json.loads(Path(path).read_text(), object_pairs_hook=unique)
+
+
+def fingerprint(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def session_id(value):
+    require(isinstance(value, str) and str(uuid.UUID(value)) == value.lower(), 'invalid session ID')
+    return value
+
+
+def settings(config, role):
+    require(isinstance(config, dict), 'config must be an object')
+    common = config.get('executor')
+    require(isinstance(common, dict), 'executor configuration block required; see docs/executors.md')
+    require(not (set(common) - {'default', 'timeout_seconds', 'codex_sandbox'}), 'unknown executor option')
+    provider = common.get('default', 'claude')
+    require(provider in ['claude', 'codex'], 'executor.default must be claude or codex')
+    stage = config.get('worker' if role == 'worker' else 'acceptance', {})
+    require(isinstance(stage, dict), 'stage configuration must be an object')
+    provider = stage.get('executor', provider)
+    require(provider in ['claude', 'codex'], 'stage executor must be claude or codex')
+    seconds = common.get('timeout_seconds', 1800)
+    turns = stage.get('max_turns', 100 if role == 'worker' else 50)
+    for key, value in [('timeout_seconds', seconds), ('max_turns', turns)]:
+        require(type(value) is int and value > 0, key + ' must be a positive integer')
+    model = stage.get('model', '')
+    require(isinstance(model, str) and not model.startswith('-'), 'model must be a name or empty string')
+    sandbox = common.get('codex_sandbox', 'workspace-write')
+    require(sandbox in ['workspace-write', 'danger-full-access'], 'invalid codex_sandbox')
+    worker = config.get('worker', {})
+    require(isinstance(worker, dict), 'worker configuration must be an object')
+    resume = worker.get('resume_sessions', True)
+    require(type(resume) is bool, 'worker.resume_sessions must be boolean')
+    executable = shutil.which(provider)
+    require(executable is not None, provider + ' executable not found')
+    return dict(executor=provider, executable=executable, model=model, timeout_seconds=seconds,
+                max_turns=turns if provider == 'claude' else None,
+                sandbox=sandbox if role == 'worker' else 'read-only', resume_sessions=resume)
+
+
+def prepare(args):
+    config = load(args.config)
+    chosen = settings(config, args.role)
+    if args.config_sha256:
+        require(fingerprint(config) == args.config_sha256, 'configuration changed since run approval')
+    worktree = str(Path(args.worktree).resolve(strict=True))
+    require(Path(worktree).is_dir(), 'worktree must be a directory')
+    p = subprocess.run(['git', '-C', worktree, 'rev-parse', '--show-toplevel'], capture_output=True, text=True)
+    require(p.returncode == 0 and Path(p.stdout.strip()).resolve() == Path(worktree), 'worktree must be the Git root')
+    prompt = Path(args.prompt_file).read_text()
+    require(bool(prompt.strip()), 'prompt file is empty')
+    request = dict(version=1, role=args.role, worktree=worktree, settings=chosen,
+                   config_sha256=fingerprint(config), prompt=prompt, resume_id=None, parent_attempt=None)
+    if args.resume_from:
+        require(args.role == 'worker', 'auditors require fresh sessions')
+        require(chosen['resume_sessions'], 'worker session resume disabled')
+        parent = Path(args.resume_from).resolve(strict=True)
+        status = subprocess.run([str(BIN/'stage-status'), str(parent)], text=True, capture_output=True)
+        require(status.returncode == 0 and json.loads(status.stdout) == {'action':'consume','exit_code':0},
+                'resume requires a completed successful attempt')
+        old, result = load(parent/'request.json'), load(parent/'result.json')
+        require(old['role'] == 'worker' and old['worktree'] == worktree, 'resume role/worktree mismatch')
+        require(old['settings'] == chosen and old['config_sha256'] == request['config_sha256'],
+                'executor/config changed; resume requires the original inputs')
+        require(result.get('is_error') is False and result.get('executor') == chosen['executor']
+                and result.get('request_sha256') == fingerprint(old), 'resume result does not match its request')
+        request.update(resume_id=session_id(result.get('session_id')), parent_attempt=str(parent))
+    return request
+
+
+def command(request, attempt):
+    cfg = request['settings']
+    cmd = [cfg['executable']]
+    if cfg['executor'] == 'claude':
+        cmd += ['-p', '--permission-mode', 'bypassPermissions', '--output-format', 'json',
+                '--max-turns', str(cfg['max_turns'])]
+        if request['role'] != 'worker':
+            cmd += ['--disallowedTools', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit']
+        if cfg['model']:
+            cmd += ['--model', cfg['model']]
+        if request['resume_id']:
+            cmd += ['--resume', request['resume_id']]
+    else:
+        # Put exec options before resume: resume does not expose --sandbox.
+        # Never inherit a broader sandbox or interactive approval policy.
+        cmd += ['exec', '--sandbox', cfg['sandbox'], '-c', 'approval_policy="never"']
+        if request['resume_id']:
+            cmd += ['resume', request['resume_id']]
+        cmd += ['--json', '--output-last-message', str(attempt/'provider-final.txt')]
+        if cfg['model']:
+            cmd += ['--model', cfg['model']]
+        cmd += ['-']  # exact prompt through stdin, never shell interpolation
+    return cmd
+
+
+def normalize(request, attempt):
+    provider = request['settings']['executor']
+    if provider == 'claude':
+        raw = load(attempt/'provider.stdout')
+        require(isinstance(raw, dict) and raw.get('is_error') is False
+                and raw.get('type') == 'result' and raw.get('subtype') == 'success',
+                'Claude did not return a successful terminal result')
+        result = {key: raw.get(key) for key in ['result', 'session_id', 'total_cost_usd', 'num_turns', 'usage']}
+    else:
+        events = [json.loads(line) for line in (attempt/'provider.stdout').read_text().splitlines() if line.strip()]
+        require(events and all(isinstance(e, dict) for e in events), 'invalid Codex event stream')
+        require(not any(e.get('type') in ['error', 'turn.failed'] for e in events), 'Codex reported a failed turn')
+        threads = [e for e in events if e.get('type') == 'thread.started']
+        starts = [e for e in events if e.get('type') == 'turn.started']
+        ends = [e for e in events if e.get('type') == 'turn.completed']
+        require(len(threads) == len(starts) == len(ends) == 1
+                and events[0] == threads[0] and events[-1] == ends[0]
+                and events.index(starts[0]) < len(events)-1, 'incomplete or ambiguous Codex turn')
+        messages = [e['item']['text'] for e in events if e.get('type') == 'item.completed'
+                    and isinstance(e.get('item'), dict) and e['item'].get('type') == 'agent_message']
+        final = (attempt/'provider-final.txt').read_text()
+        require(messages and isinstance(messages[-1], str) and messages[-1].strip() == final.strip(),
+                'Codex final message does not match completed output')
+        result = dict(result=final, session_id=threads[0].get('thread_id'),
+                      total_cost_usd=None, num_turns=None, usage=ends[0].get('usage'))
+    require(isinstance(result['result'], str) and result['result'].strip(), 'empty/non-text agent result')
+    session_id(result['session_id'])
+    if request['resume_id']:
+        require(result['session_id'] == request['resume_id'], 'resumed session identity changed')
+    result.update(executor=provider, is_error=False, request_sha256=fingerprint(request))
+    return result
+
+
+def execute(attempt):
+    # Called ONLY by run-stage after its atomic claim, with the frozen request
+    # on stdin. Raw provider logs remain separate from the normalized envelope.
+    request = json.load(sys.stdin)
+    with (attempt/'request.json').open('x') as f:
+        json.dump(request, f, sort_keys=True)
+        f.flush()
+        os.fsync(f.fileno())
+    cmd = command(request, attempt)
+    with (attempt/'provider.stdout').open('x') as stdout, (attempt/'provider.stderr.log').open('x') as stderr:
+        p = subprocess.Popen(cmd, cwd=request['worktree'], stdin=subprocess.PIPE,
+                             stdout=stdout, stderr=stderr, text=True, start_new_session=True)
+        try:
+            p.communicate(request['prompt'], timeout=request['settings']['timeout_seconds'])
+            rc = p.returncode if p.returncode >= 0 else 128 - p.returncode
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(p.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                p.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            p.wait()
+            rc = 124
+    try:
+        require(rc == 0, 'executor timed out' if rc == 124 else 'executor exited ' + str(rc))
+        result = normalize(request, attempt)
+    except (ValueError, OSError, KeyError, TypeError) as error:
+        result = dict(executor=request['settings']['executor'], is_error=True, result='',
+                      error=str(error), session_id=None, total_cost_usd=None, num_turns=None,
+                      request_sha256=fingerprint(request))
+        rc = rc or 4
+    print(json.dumps(result), flush=True)
+    return rc
+
+
+def main():
+    if len(sys.argv) == 3 and sys.argv[1] == '_execute':
+        return execute(Path(sys.argv[2]))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=['check', 'run'])
+    parser.add_argument('--config', required=True)
+    parser.add_argument('--config-sha256', help='expected config identity recorded at bootstrap')
+    parser.add_argument('--role', choices=['worker', 'critic', 'acceptance'])
+    for name in ['attempt', 'worktree', 'prompt-file', 'resume-from']:
+        parser.add_argument('--' + name)
+    args = parser.parse_args()
+    if args.action == 'check':
+        config = load(args.config)
+        resolved = {role: settings(config, role) for role in ['worker', 'acceptance']}
+        print(json.dumps(dict(config_sha256=fingerprint(config), **resolved)))
+        return 0
+    require(all([args.role, args.attempt, args.worktree, args.prompt_file]), 'run requires role, attempt, worktree, prompt-file')
+    attempt = Path(args.attempt)
+    require(attempt.is_absolute(), 'attempt directory must be absolute')
+    # An existing claim wins even if inputs were changed or removed after a crash.
+    if os.path.lexists(attempt):
+        print('run-agent: attempt already claimed; inspect stage-status', file=sys.stderr)
+        return 73
+    request = prepare(args)
+    return subprocess.run([str(BIN/'run-stage'), str(attempt), '--', sys.executable,
+                           str(Path(__file__).resolve()), '_execute', str(attempt)],
+                          input=json.dumps(request), text=True).returncode
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main())
+    except (ValueError, OSError, KeyError, TypeError) as error:
+        print('run-agent: ' + str(error), file=sys.stderr)
+        sys.exit(4)

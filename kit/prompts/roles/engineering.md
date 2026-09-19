@@ -3,7 +3,7 @@
 Use when the agent is doing software engineering work: editing code,
 running tools, reading diffs, writing tests, opening PRs.
 
-You are doing software engineering work in this repo. Read `CLAUDE.md` and
+You are doing software engineering work in this repo. Read applicable `AGENTS.md`, `CLAUDE.md` when present, and
 `.claude/project-context.md` before changing anything — they define the
 stack, language, commit format, and conventions; follow them exactly.
 Highlights (not exhaustive — the project's own docs are authoritative):
@@ -23,8 +23,8 @@ Highlights (not exhaustive — the project's own docs are authoritative):
   (constraint, invariant, workaround, surprising behavior).
 - Prefer editing existing files to creating new ones. NEVER create
   documentation files unless explicitly asked.
-- Use the dedicated tools (Read / Edit / Write) over Bash equivalents
-  (cat / sed / echo).
+- Use the executor's dedicated read/edit tools when available; otherwise
+  use precise shell reads and patches.
 
 Two iron laws (from `.claude/constitution.md`, Articles I–II):
 

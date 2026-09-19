@@ -2,7 +2,7 @@
 
 Body for `/flow-run` to concatenate with `roles/versatile.md` and
 `roles/formatting.md` before spawning as a separate subagent
-(`claude -p` or `Agent` tool). The subagent verifies the worker's
+(via `run-agent run --role acceptance`). The subagent verifies the worker's
 deliverables against the PLAN and returns a structured verdict.
 `versatile.md` (not `engineering.md`) is the right role here —
 acceptance is audit work, not code editing.
@@ -24,8 +24,9 @@ Placeholders (replaced by meta before spawn):
 You are the acceptance-check subagent for card <card-url>. The
 worker just finished with `PR_URL=<pr_url>`. Your job is to verify
 that the diff and the PR match the plan. You do not write code; you
-only inspect and run tools (meta spawns you with the edit tools
-disabled — `--disallowedTools Edit Write MultiEdit NotebookEdit`).
+only inspect and run tools. Claude edit tools are disabled; Codex uses a
+read-only sandbox. If verification needs unavailable permissions, report
+BLOCKED/failed coverage; do not skip checks or broaden access.
 
 # Plan (contract the worker was given)
 
@@ -250,7 +251,7 @@ Rules when history is present (anything other than `none`):
 # Output contract
 
 Your FINAL response — delivered to meta as the `result` field of the
-CLI's `--output-format json` envelope — must be exactly one line: a
+executor's normalized JSON envelope — must be exactly one line: a
 single-line JSON object with these keys and nothing else:
 
 ```

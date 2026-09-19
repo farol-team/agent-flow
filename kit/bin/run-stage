@@ -19,7 +19,8 @@ mv "$DIR/owner.json.tmp" "$DIR/owner.json"
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
 set +e
-"$@" > "$DIR/result.json" 2> "$DIR/stderr.log" &
+# Keep explicit stdin for adapters; background jobs otherwise read /dev/null.
+"$@" <&0 > "$DIR/result.json" 2> "$DIR/stderr.log" &
 CHILD=$!
 wait "$CHILD"
 RC=$?

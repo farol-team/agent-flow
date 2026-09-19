@@ -25,7 +25,8 @@ leave it for human `Review`.
 
 ## Invocation
 
-Four forms, all run from a Claude Code session in the repo:
+Four forms from a Claude Code session, or the equivalent explicit request
+to a Codex/meta session reading this file (substitute `$ARGUMENTS`):
 
 - `/flow-run` — process every card currently in `Ready for AI`,
   sequentially.
@@ -73,7 +74,7 @@ Four forms, all run from a Claude Code session in the repo:
   straight to Step 2.1 — a gated card must not silently lose its
   spec-first path); `spawn_iter_<N≥2>` → Step 2.1 with `iter = N`;
   `tdd_critic` → Step 2.1a.2; `tdd_impl` → Step 2.1a.4 (phase B,
-  `--resume` the journaled `session_id`); `acceptance` → Step 2.3;
+  `--resume-from` the journaled `worker_attempt`); `acceptance` → Step 2.3;
   `merge_decision` → Phase 3; `done` → report the last `iter_log`
   outcome (the card reached a terminal decision; if its list disagrees,
   the final state move failed — finish it manually) and exit.
@@ -87,7 +88,7 @@ Combinations:
 
 ## Contract (what you must NOT do)
 
-- Do NOT write code yourself — only the worker (a `claude -p` process in a
+- Do NOT write code yourself — only the worker (a configured executor process in a
   git worktree) writes code.
 - Do NOT open the PR yourself — only the worker (iteration 1) does that.
 - Do NOT claim acceptance or move a card to `Done` without an acceptance
@@ -109,11 +110,11 @@ Combinations:
   the semantic ops, resolves refs, and defines `<card-short>`.
 - `.claude/bin/` — the mechanical halves meta MUST call instead of
   improvising: `parse-verdict` (verdict extraction + fingerprints),
-  `harvest-learnings`, `render-learnings`. Unit-tested in the kit repo
+  `harvest-learnings`, `render-learnings`, `run-agent`. Unit-tested in the kit repo
   (`tests/kit-bin.test.sh`).
 - `flow-workflow.md` — optional project-owned workflow doc; absent
   by default (this command is self-contained without it).
-- `CLAUDE.md` — commit style (worker reads it).
+- `AGENTS.md` / `CLAUDE.md` when present — project instructions (worker reads them).
 - `.gilb/session-log.md` — recent automation history.
 - Project learnings file — `tracker.json` `learnings` (default
   `.claude/learnings.jsonl`): one JSON object per line,
@@ -124,7 +125,11 @@ Combinations:
 
 ### Bootstrap (once)
 
-0. Verify `jq` and Python 3 are available (`command -v jq`, `python3 --version`).
+0. Run `.claude/bin/run-agent check --config .claude/tracker.json`.
+   This validates executor selection, limits and CLI availability before side effects.
+   Stop on failure. Record `config_sha256` and both resolved executors in the
+   journal; compare before EVERY new stage. A config change during a run -> Blocked,
+   never silently switch executors or reuse evidence. Then verify `jq` and Python 3 are available (`command -v jq`, `python3 --version`).
    They parse envelopes, power hooks and validate review manifests. Missing → stop with
    `jq and Python 3 are required by /flow-run. Install missing dependencies first.`
    Read `tracker.provider` from `.claude/tracker.json` and read the
@@ -138,7 +143,7 @@ Combinations:
    Verify the kit bin scripts exist and are executable
    (`.claude/bin/parse-verdict`, `harvest-learnings`,
    `render-learnings`, `verify-pr-head`, `merge-reviewed-pr`,
-   `run-stage`, `stage-status`, `review-manifest`). Missing → stop with
+   `run-stage`, `stage-status`, `review-manifest`, `run-agent`). Missing → stop with
    `Kit bin scripts missing: <path>. Re-run bin/workflow-kit-sync.`
    Do not inline a fallback — hand-parsing verdicts is exactly the
    failure mode these scripts pin down.
@@ -240,7 +245,7 @@ Execution complete (parallelism N=<N>):
   - → Review (escalated): <R>
   - → Blocked: <K>
 - Mean iterations: <num>
-- Total cost: $<sum of all cards' cost_usd>
+- Reported cost subtotal: $<sum of known costs>; <unknown_cost_runs> runs unpriced
 ```
 
 For single-card invocation, replace `Cards processed: <count>` with the
@@ -294,7 +299,7 @@ while pending or in_flight:
   on the meta-agent's main thread before the next worker spawn. This
   keeps the board ordered and avoids `git` racing itself in
   the parent repo.
-- **Worker spawns are async.** Each uses `run-stage ... -- claude -p ... &` (background)
+- **Worker spawns are async.** Each uses `run-agent run ... &` (background)
   with its own result/stderr files in `<worker_log_dir>`.
 - **Acceptance checks are serialized** per finished worker. Meta runs
   one acceptance procedure at a time (it competes for the same `cargo`
@@ -375,7 +380,7 @@ f. **Toolchain preflight** (from `target.toolchain`), in the worktree:
      do not spawn the worker.
    - `docs` → none.
 
-f2. **Provision worker guardrails** in the worktree — hooks that
+f2. **Provision Claude worker guardrails** in the worktree — hooks that
    deterministically enforce the plan contract (scope + git safety),
    shipped with the kit under the meta project's `.claude/hooks/`:
    ```bash
@@ -402,6 +407,10 @@ f2. **Provision worker guardrails** in the worktree — hooks that
    proceed WITHOUT guardrails and note it once in chat (the acceptance
    check still enforces scope post-hoc); do not stop the run.
 
+For Codex workers these Claude hooks are not executed. `run-agent` applies the
+configured workspace sandbox; scope and git intent are rechecked in acceptance.
+A sandbox/permission failure is Blocked, never permission to rerun unrestricted.
+
 g. Move card to `In Progress`. Comment:
    ```
    [meta] Starting work
@@ -424,7 +433,10 @@ In-memory state for this card:
 - `iter` = 1
 - `MAX_ITER` = 3
 - `pr_url` = null
-- `session_id` = null   // CLI session of the last worker run (for --resume)
+- `session_id` = null   // executor session; never select a globally latest session
+- `worker_attempt` = null // last successful worker attempt, NOT the critic
+- `executor_config_sha256` = bootstrap config hash; record resolved executors too
+- `unknown_cost_runs` = 0 // runs for which the provider reports no USD cost
 - `cost_usd` = 0.0      // accumulated over worker + acceptance runs
 - `agent_runs` = 0
 - `iter_log` = []  // list of dicts: {iter, outcome, gaps_count, gaps_summary, log_path}
@@ -462,7 +474,7 @@ inside the auto-merge decision stays resumable. `/flow-run --resume
 Already-running workers may finish, and their attempt directories remain
 recoverable. Never proceed with an unrecorded side effect.
 
-**Durable stage attempts (mandatory for EVERY Claude process).** Allocate
+**Durable stage attempts (mandatory for EVERY executor process).** Allocate
 one `run_id` before the first spawn; persist it and never regenerate it
 on resume. Stage IDs distinguish `iter1-specs-1`, `iter1-critic-1`,
 `iter1-specs-2`, `iter1-critic-2`, `iter1-impl`, `iterN-worker`, and
@@ -473,12 +485,12 @@ on resume. Stage IDs distinguish `iter1-specs-1`, `iter1-critic-1`,
 
 ```bash
 .claude/bin/stage-status "<attempt-dir>"
-.claude/bin/run-stage "<attempt-dir>" -- claude <arguments>
+.claude/bin/run-agent run --attempt "<attempt-dir>" <stage arguments below>
 ```
 
 Use absolute kit-bin paths when changing to the worktree. `start` permits
-`run-stage`; its atomic claim refuses duplicates even if two callers race.
-Exit 73 means re-read `stage-status`, NOT that Claude crashed.
+`run-agent`, which calls `run-stage`; its atomic claim refuses duplicates.
+Exit 73 means re-read `stage-status`, NOT that the executor crashed.
 `wait` means the recorded wrapper is alive: poll the SAME attempt.
 `consume` means read `result.json`, `stderr.log`, and the recorded
 `exit_code` as `CLI_EXIT`; do NOT launch again, even if the meta journal
@@ -492,7 +504,7 @@ known and the protocol permits retry. A resumed PLAN must match
 `approved_plan`; a changed body requires renewed approval.
 
 For journal actions `merge_decision` and `done`, reconcile PR/tracker state
-directly; do not require a pending Claude attempt. Before replaying
+directly; do not require a pending executor attempt. Before replaying
 `merge_decision`, query the PR state. If already MERGED,
 reconcile its head SHA with `reviewed_sha` and finish tracker/log updates
 only. Unknown/different SHA -> Review; never repeat the merge blindly.
@@ -509,7 +521,7 @@ carries inline test-first discipline for ungated cards).
    `.claude/prompts/worker-specs.md` (substitute `<learnings>` the same
    way as Step 2.1). Expected `result`: first line
    `SPECS_READY` (+ a `failing:` line). `BLOCKED:` / crash → handle
-   exactly as Step 2.2. Store `session_id`.
+   exactly as Step 2.2. Store `session_id` and `worker_attempt`.
 
    A phase-A `BLOCKED` caused by an invalid PLAN requires re-triage.
    Propose a corrected PLAN in `Plan Proposed` and wait for the human's
@@ -517,8 +529,10 @@ carries inline test-first discipline for ungated cards).
    move the card to Ready yourself, or delete the worktree/branch.
    Retain evidence; `/flow-clean` remains the cleanup procedure. A new
    approved run uses a new run ID and a distinct branch/worktree suffix.
-2. **Spawn test critic** — use the durable stage runner, versatile+formatting
-   roles, edit tools disallowed, a fresh session and `acceptance.model` if set.
+2. **Spawn test critic** — use `run-agent run --role critic` with the same
+   config/worktree/prompt-file/attempt flags as acceptance, versatile+formatting
+   roles, a fresh session and the recorded config SHA. It uses the acceptance executor/model.
+   Do not overwrite `worker_attempt` with the critic attempt.
    Do NOT run Step 2.3 PR/manifest gates here: phase A has no PR yet. Use body
    `.claude/prompts/test-critic.md`. Extract its verdict with
    `.claude/bin/parse-verdict critic <result-json>` (exit 0 →
@@ -527,8 +541,9 @@ carries inline test-first discipline for ungated cards).
    output through `harvest-learnings` (max 1) per the Learnings
    harvest rule in Step 2.3.
 3. **verdict == "rejected"** → respawn phase A ONCE via
-   `--resume <session_id>` with a short body: the critic's `findings`
-   list + "revise the specs, same rules, finish with SPECS_READY".
+   `--resume-from <worker_attempt>` when session resume is enabled, otherwise
+   fresh. Always supply the full phase-A prompt and approved PLAN, plus the
+   critic's findings and "revise specs, same rules, finish with SPECS_READY".
    Re-run the critic. If it rejects AGAIN → move card to `Blocked`,
    comment `[meta] Test critic rejected specs twice: <summary>` +
    findings; exit loop (a plan whose done-definition can't be encoded in
@@ -539,17 +554,20 @@ carries inline test-first discipline for ungated cards).
    Specs: <failing: line from phase A>
    Critic: <summary>  (findings relayed to phase B: <N>)
    ```
-   Then **spawn phase B** via `--resume <session_id>` with body
-   `.claude/prompts/worker-impl.md` (`<critic-findings>` = the approved
-   verdict's findings, or `none`). Its result is parsed by Step 2.2 as
+   Then **spawn phase B** with `--role worker`, resuming `worker_attempt`
+   only if enabled. Supply engineering+formatting roles and
+   `.claude/prompts/worker-impl.md`, including the full `<PLAN-comment>`
+   (`<critic-findings>` = the approved verdict's findings, or `none`). Its result is parsed by Step 2.2 as
    the iteration-1 result (expect `PR_URL=<url>`).
 
-Costs: add every spawn's `total_cost_usd` to `cost_usd`, increment
-`agent_runs` each time.
+Costs: add only numeric `total_cost_usd` to `cost_usd`; null increments
+`unknown_cost_runs`. Never present an unpriced Codex run as free. Increment
+`agent_runs` for every spawn; retain `usage` tokens when available.
 
 ### Step 2.1 — Spawn worker
 
-Result path: `<attempt-dir>/result.json` (CLI envelope).
+Result path: `<attempt-dir>/result.json` (normalized executor envelope).
+Raw output/error logs and frozen `request.json` remain beside it.
 Stderr: `<attempt-dir>/stderr.log`. Use the durable stage protocol above.
 
 Build the worker prompt by concatenating role blocks with the
@@ -586,33 +604,37 @@ The role files are appended verbatim (no placeholder substitution);
 only the body has placeholders. If any role file is missing → stop
 with `Role prompt file missing: <path>`. Do not inline a fallback.
 
-**Session resume policy.** When `worker.resume_sessions` is true
-(default) AND `iter == 2` AND `session_id` from iter 1 is known, add
-`--resume <session_id>` to the spawn — the worker keeps its iteration-1
-context (cheaper, faster, no re-reading the repo). Iteration 3 always
-starts a FRESH session: after two failed attempts a clean perspective
-beats accumulated context. The iterN prompt body is the same either way.
+**Session resume policy.** When `worker.resume_sessions` is true and
+`iter == 2`, use `--resume-from <worker_attempt>` from the successful first
+iteration. Iteration 3 is always fresh. The adapter verifies provider,
+worktree, full config and session identity; it never uses `--last` or changes
+provider on failure. Save each successful worker's attempt for subsequent
+resumes. Auditors always start fresh. With resume disabled, all worker
+prompts must contain the full plan and phase rules, including TDD phase B.
 
-Spawn:
+Write the fully rendered prompt to a file outside the unclaimed attempt.
+Spawn (use absolute paths):
 ```bash
-cd <worktree-path>
-<absolute-kit-bin>/run-stage "<attempt-dir>" -- claude -p "<prompt>" \
-  --permission-mode bypassPermissions \
-  --output-format json \
-  --max-turns <worker.max_turns>
+<absolute-kit-bin>/run-agent run --role worker \
+  --config <meta-project>/.claude/tracker.json --config-sha256 <recorded-config-sha> \
+  --worktree <worktree-path> \
+  --prompt-file <rendered-prompt-file> --attempt "<attempt-dir>"
 CLI_EXIT=$?
 ```
-Add `--model <worker.model>` when `worker.model` is non-empty, and
-`--resume <session_id>` per the resume policy above. (The worktree's
-`.claude/settings.local.json` from Phase 1.f2 arms the scope/git
-guard hooks; they run even under `bypassPermissions`.)
+Add `--resume-from <worker_attempt>` only per policy. The adapter selects
+`worker.executor` or `executor.default`, and the stage's model. Claude uses
+its existing permission mode/hooks and `max_turns`. Codex uses the configured
+worker sandbox, never interactive approvals; audits use read-only. Both have
+`executor.timeout_seconds`; Codex has no equivalent of Claude `max_turns`.
+A missing CLI or unsupported permission mode blocks; never weaken it to retry.
 
 ### Step 2.2 — Parse worker result
 
 Parse the JSON envelope from `<result-json>` (use `jq`):
 `result` (the worker's final response text), `session_id` (store it),
-`total_cost_usd` (add to `cost_usd`), `num_turns`, `is_error`.
-Increment `agent_runs`.
+`executor`, `total_cost_usd` (numeric subtotal or null/unpriced), `usage`,
+`num_turns` (null for Codex), `is_error`. Increment `agent_runs`.
+Record `worker_attempt` only after a successful worker result; never for audits.
 
 - `CLI_EXIT != 0`, or `is_error == true`, or the file is missing /
   not valid JSON / has an empty `result` → **crash**:
@@ -692,20 +714,19 @@ when it is empty (always on iteration 1), else one line per fingerprint:
 <fingerprint> — <status> (first seen iter <first_iter>, in gaps <times_in_gaps>×)
 ```
 
-Spawn (note the audit role is enforced by tooling, not just prompt —
-edit tools are disallowed, and an acceptance-specific cheaper model
-can be configured via `acceptance.model`):
+Spawn through the same adapter, with a fresh audit session:
 ```bash
-cd <worktree-path>
-<absolute-kit-bin>/run-stage "<attempt-dir>" -- claude -p "<acceptance-prompt>" \
-  --permission-mode bypassPermissions \
-  --disallowedTools Edit Write MultiEdit NotebookEdit \
-  --output-format json \
-  --max-turns <acceptance.max_turns>
+<absolute-kit-bin>/run-agent run --role acceptance \
+  --config <meta-project>/.claude/tracker.json --config-sha256 <recorded-config-sha> \
+  --worktree <worktree-path> \
+  --prompt-file <rendered-acceptance-prompt-file> --attempt "<attempt-dir>"
 CLI_EXIT=$?
 ```
-Add `--model <acceptance.model>` when non-empty. Acceptance never
-resumes a session — an independent verdict requires a fresh context.
+The adapter selects `acceptance.executor` or `executor.default` and
+`acceptance.model`. Claude edit tools are disabled; Codex uses read-only
+sandbox. Neither is permission to mutate external services. Commands that
+cannot run under the audit permissions must produce BLOCKED/failed coverage;
+do not fabricate evidence, skip gates or broaden permissions.
 
 Then extract the verdict mechanically — do NOT parse `result` yourself:
 ```bash
@@ -718,7 +739,7 @@ PV_EXIT=$?
   contradictory decisions or multiple JSON objects fail closed), plus
   `_fingerprints.{gaps,minor}` (entry-wise,
   `null` where unparseable), `_fps.{parsed,total}`, `_session_id`,
-  `_cost_usd` (add to `cost_usd`), `_num_turns`. Acceptance requires
+  `_cost_usd` (known subtotal or null/unpriced), `_num_turns`, `_executor`, `_usage`. Acceptance requires
   empty gaps AND spec=pass AND quality=approved; `minor` never blocks.
 - **exit 3** — the subagent said `BLOCKED:`; stdout carries the reason.
   Move card to `Blocked` with
@@ -919,7 +940,7 @@ PR: <pr_url>
 Strategy: <strategy>
 Iterations: <iter> / 3
 Confidence: <N>/10, Risk: <risk>
-Cost: $<cost_usd> across <agent_runs> agent runs
+Reported cost subtotal: $<cost_usd>; <unknown_cost_runs> unpriced of <agent_runs> runs
 Reviewed commit: <reviewed_sha>
 Branch retained for inspection.
 
@@ -928,7 +949,7 @@ Iteration history:
 - iter 2: <outcome> — <gaps_summary>  (if applicable)
 ```
 
-Append session-log: `<ts> <card-short> MERGED | iter=<N> conf=<N> cost=$<cost_usd> PR#<num>`.
+Append session-log: `<ts> <card-short> MERGED | iter=<N> conf=<N> known_cost=$<cost_usd> unpriced=<unknown_cost_runs> PR#<num>`.
 
 Skip Phase 4 (finalized here).
 
@@ -945,7 +966,7 @@ Move card to `Review`. Comment:
 
 PR: <pr_url>
 Iterations: <iter> / 3
-Cost: $<cost_usd> across <agent_runs> agent runs
+Reported cost subtotal: $<cost_usd>; <unknown_cost_runs> unpriced of <agent_runs> runs
 
 Iteration history:
 - iter 1: <outcome> — <gaps_summary>
@@ -954,7 +975,7 @@ Iteration history:
 Acceptance check passed; the criteria above kept this from auto-merge. Please review.
 ```
 
-Append session-log: `<ts> <card-short> REVIEW | iter=<N> cost=$<cost_usd> blockers=<count>: <comma-joined>`.
+Append session-log: `<ts> <card-short> REVIEW | iter=<N> known_cost=$<cost_usd> unpriced=<unknown_cost_runs> blockers=<count>: <comma-joined>`.
 
 Skip Phase 4 (finalized here).
 
@@ -966,8 +987,8 @@ Catch-all: append the session-log entry if not yet written. Paths from
 Phase 2 (Blocked due to crash, blocked, or max-iter) come here without
 writing — handle them:
 
-- Crash/blocked: `<ts> <card-short> BLOCKED | <reason short form> cost=$<cost_usd>`
-- Max-iter: `<ts> <card-short> BLOCKED | max-iter exhausted, <N> gaps: <gaps_summary> cost=$<cost_usd>`
+- Crash/blocked: `<ts> <card-short> BLOCKED | <reason short form> known_cost=$<cost_usd> unpriced=<unknown_cost_runs>`
+- Max-iter: `<ts> <card-short> BLOCKED | max-iter exhausted, <N> gaps: <gaps_summary> known_cost=$<cost_usd> unpriced=<unknown_cost_runs>`
 
 For long-running cards, also write `STARTED` at the end of Phase 1 (gives
 visibility into in-flight work). Then the terminal event (`MERGED` /
@@ -1044,10 +1065,10 @@ deliberately deferred until a second board exists.
 | PR conflicts with main by acceptance time | Gap: "PR has merge conflicts with main. Rebase needed." → iteration. |
 | Worker iter N opened NEW PR instead of pushing existing | Blocked: explicit message. |
 | Tracker (MCP/CLI) fails mid-card | Stop. Card stays in current state. |
-| Worker result JSON missing / empty / unparseable | Blocked: crash path per Step 2.2. Point to the stderr log. |
+| Worker result JSON missing / empty / unparseable | Blocked: crash path per Step 2.2. Point to normalized result and raw provider logs. |
 | `jq` not installed | Stop at bootstrap. It is required to parse worker result envelopes and by the guardrail hooks. |
 | Kit hooks missing from `<meta-project>/.claude/hooks/` | Proceed without guardrails; note once in chat. Acceptance still enforces scope post-hoc. |
-| `--resume <session_id>` fails (session expired / missing) | Only after a recorded terminal exit: one fresh-session retry in a new persisted attempt directory. Supply the FULL plan and phase rules (especially phase B); never retry from an empty context. |
+| `--resume-from <worker_attempt>` fails (session expired / missing) | Only a provider-reported expired/missing session after a recorded terminal exit permits one fresh-session retry; config/provider/identity mismatch requires inspection. Use a new persisted attempt directory. Supply the FULL plan and phase rules (especially phase B); never retry from an empty context. |
 | Auto-merge succeeds but card move to Done fails | Comment in card that merge happened; chat error. Manual card move. |
 | `gh pr merge` fails (branch protection, conflicts) | Treat as auto-merge blocker; move to Review with `gh` error in comment. |
 | Worker prompt template file (`worker-iter1.md`, `worker-iterN.md`) missing | Stop. Don't inline a fallback. |
