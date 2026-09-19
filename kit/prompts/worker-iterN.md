@@ -1,7 +1,7 @@
 # Worker prompt template — iteration N (N > 1)
 
 Body for `/flow-run` to concatenate with `roles/engineering.md` and
-`roles/formatting.md` before passing to `claude -p`. The PR already
+`roles/formatting.md` before passing to the configured executor via `run-agent`. The PR already
 exists; worker pushes additional commits.
 
 Placeholders (replaced by meta before spawn):

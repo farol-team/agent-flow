@@ -1,16 +1,19 @@
 # Worker prompt template — iteration 1, phase B (implementation)
 
-Sent via `--resume <session_id>` into the SAME worker session that ran
-phase A (`worker-specs.md`), after the test critic approved (or meta
-exhausted spec revisions). The worker already has the plan and the specs
-in context — this body is intentionally short.
+Sent after the test critic APPROVES phase A. The executor can resume the
+phase-A worker or start fresh; this prompt always includes the full plan.
+Exhausted spec revisions never authorize implementation.
 
-Placeholders: `<card-url>`, `<branch>`, `<base>`, `<critic-findings>`
-(the critic's non-blocking findings, or `none`).
+Placeholders: `<card-url>`, `<branch>`, `<base>`, `<PLAN-comment>`,
+`<critic-findings>` (the critic's non-blocking findings, or `none`).
 
 ---
 
 Phase A approved. This is **phase B: implement** for card <card-url>.
+
+# Approved plan
+
+<PLAN-comment>
 
 Test-critic findings to keep in mind (non-blocking): <critic-findings>
 

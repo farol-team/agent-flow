@@ -1,7 +1,7 @@
 # Worker prompt template — iteration 1
 
 Body for `/flow-run` to concatenate with `roles/engineering.md` and
-`roles/formatting.md` before passing to `claude -p`. The body below
+`roles/formatting.md` before passing to the configured executor via `run-agent`. The body below
 focuses on workflow logic; persona, style, commit conventions, and the
 final-response contract live in the role files.
 

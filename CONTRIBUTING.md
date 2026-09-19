@@ -11,9 +11,10 @@ bash tests/kit-invariants.sh   # static contracts (needs bash + jq + Python 3)
 bash tests/kit-bin.test.sh     # behavioral pins for kit/bin/*
 python3 tests/review-gates.test.py  # offline git/process/GitHub fixtures (Python 3)
 python3 tests/review-manifest.test.py  # coverage, policy, identity and evidence
+python3 tests/executors.test.py        # Claude/Codex CLI, sessions and durable attempts
 ```
 
-CI runs all four suites. Green locally = green in CI; there is no hidden step.
+CI runs all five suites. Green locally = green in CI; there is no hidden step.
 
 ## Rules that surprise people
 

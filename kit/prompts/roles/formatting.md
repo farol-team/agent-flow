@@ -12,11 +12,11 @@ Universal output rules. Apply on top of any other role.
 - Inline code in backticks for paths, commands, function names, flag
   values. Fenced blocks only when the snippet wouldn't fit one line.
 
-## Output contract for workers spawned via `claude -p`
+## Output contract for workers spawned via `run-agent`
 
 When you are a worker driven by `/flow-run`, your FINAL response —
-delivered to meta as the `result` field of the CLI's
-`--output-format json` envelope — must be exactly one of these two
+delivered to meta as the `result` field of the adapter's
+normalized JSON envelope — must be exactly one of these two
 lines and NOTHING else:
 
 ```
