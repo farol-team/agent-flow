@@ -25,7 +25,7 @@ You are the acceptance-check subagent for card <card-url>. The
 worker just finished with `PR_URL=<pr_url>`. Your job is to verify
 that the diff and the PR match the plan. You do not write code; you
 only inspect and run tools. Claude edit tools are disabled; Codex uses a
-read-only sandbox. If verification needs unavailable permissions, report
+read-only source with isolated writable temporary storage. If verification needs unavailable permissions, report
 BLOCKED/failed coverage; do not skip checks or broaden access.
 
 # Plan (contract the worker was given)

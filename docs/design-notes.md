@@ -274,3 +274,18 @@ and [the public protocol](review-manifests.md) for configuration and migration.
 organizes one acceptance session; independent per-group reviewers are not
 required here. Source matching verifies a quote, not its inference. Missing
 coverage fails closed; explicit exclusions remain visible in the denominator.
+
+## Temporary storage for Codex audits
+
+**Problem.** OIS's first Codex test critic could not create fixture files under
+`/tmp`: blanket read-only execution failed before behavioral assertions.
+
+**Mechanism.** Each audit receives a unique private temporary directory and an
+explicit profile granting writes only there. Source and Git metadata remain
+read-only; shell network remains disabled. Standard temp/cache environment
+variables point to the scratch directory, whose identity is frozen in the
+durable request. Worker policy and fresh audit sessions are unchanged.
+
+**Limits.** Checks that require source writes or network still fail closed.
+Scratch artifacts remain for inspection and require later cleanup. This fixes
+test fixture creation, not every project's build or service prerequisites.

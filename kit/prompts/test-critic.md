@@ -3,7 +3,7 @@
 Body for `/flow-run` to concatenate with `roles/versatile.md` and
 `roles/formatting.md`, spawned between worker phase A (specs) and phase B
 (implementation) on TDD-gated cards. `run-agent run --role critic` disables
-Claude edit tools or uses the Codex read-only sandbox. Inspect and run, never
+Claude edit tools or uses Codex read-only source with isolated writable temporary storage. Inspect and run, never
 fix. If verification cannot run under these permissions, report BLOCKED.
 
 Placeholders: `<card-url>`, `<worktree-path>`, `<branch>`, `<base>`,

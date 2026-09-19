@@ -135,7 +135,7 @@ else:
             self.addCleanup(lambda p=scratch: __import__('shutil').rmtree(p, ignore_errors=True))
             self.assertTrue(scratch.is_dir())
             self.assertEqual(scratch.stat().st_mode & 0o777, 0o700)
-            self.assertFalse(scratch.is_relative_to(self.repo))
+            self.assertNotIn(self.repo, scratch.parents)
             self.assertEqual(self.calls()[-1]['temp'], str(scratch))
             self.assertEqual(self.calls()[-1]['cache'], str(scratch/'cache'))
             permissions = next(a for a in args if a.startswith('permissions='))
