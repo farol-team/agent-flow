@@ -18,5 +18,7 @@ jobs:
         run: python3 tests/review-gates.test.py
       - name: Review manifest regressions (offline)
         run: python3 tests/review-manifest.test.py
+      - name: Offline audit evidence regressions
+        run: python3 tests/audit-evidence.test.py
       - name: Claude and Codex executor contracts (offline process fixtures)
         run: python3 tests/executors.test.py

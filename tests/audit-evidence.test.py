@@ -24,7 +24,8 @@ class Evidence(Fixture):
         self.config['checks'] = [{'name':'ios', 'bucket':'pass', 'link':'https://github.com/test/repo/actions/runs/10/job/20'}]
         self.run_data = {'id':10, 'run_attempt':1, 'event':'pull_request', 'path':'.github/workflows/ios.yml',
                          'head_sha':self.sha, 'status':'completed', 'conclusion':'success',
-                         'repository':{'full_name':'test/repo'}, 'head_repository':{'full_name':'test/repo'}}
+                         'repository':{'full_name':'test/repo'}, 'head_repository':{'full_name':'test/repo'},
+                         'pull_requests':[{'number':1, 'head':{'sha':self.sha}, 'base':{'sha':self.config['meta']['baseRefOid']}}]}
         self.job_data = {'id':20, 'run_id':10, 'run_attempt':1, 'name':'ios', 'head_sha':self.sha,
                          'status':'completed', 'conclusion':'success', 'labels':['macos-15'],
                          'steps':[{'name':'Test iOS', 'number':1, 'status':'completed', 'conclusion':'success'}]}
@@ -88,6 +89,8 @@ class Evidence(Fixture):
     def test_wrong_run_job_head_attempt_platform_and_step_fail_closed(self):
         for target, key, value in [(self.run_data,'head_sha','f'*40), (self.run_data,'conclusion','failure'),
             (self.run_data,'path','.github/workflows/other.yml'), (self.run_data,'repository',{'full_name':'other/repo'}),
+            (self.run_data,'pull_requests',[]),
+            (self.run_data,'pull_requests',[{'number':1,'head':{'sha':self.sha},'base':{'sha':'f'*40}}]),
             (self.job_data,'head_sha','f'*40), (self.job_data,'run_attempt',2), (self.job_data,'run_id',99),
             (self.job_data,'labels',['ubuntu-latest']), (self.job_data,'steps',[]),
             (self.job_data,'steps',[{'name':'Test iOS','status':'completed','conclusion':'skipped'}])]:
@@ -120,6 +123,36 @@ class Evidence(Fixture):
         p = self.tool('review-manifest','create','--repo',self.repo,'--base','origin/main','--head',self.sha,
             '--plan',self.plan,'--config',self.tracker,'--kit',ROOT/'kit','--output',self.manifest)
         self.assertEqual(p.returncode,4,p.stderr)
+
+    def test_invalid_declarations_do_not_silently_fall_back_to_local_or_other_ci(self):
+        for text in ['## Tests\n- Remote CI: {}', '## Other\n- Remote CI: {}',
+                     '## Tests\nRemote CI: {}', '## Tests\n- Remote CI: {"command":"x", "command":"y"}']:
+            self.plan.write_text(text)
+            self.collect(expect=4)
+
+    def test_offline_protocol_retains_fresh_local_tests_and_platform_probe(self):
+        prompt = (ROOT/'kit/prompts/acceptance-check.md').read_text()
+        self.assertIn('run it locally in THIS audit', prompt)
+        self.assertIn('a local failure is always a gap', prompt)
+        self.assertIn('fresh local tool/platform probe', prompt)
+        self.assertIn('cannot mask failure', prompt)
+        self.assertIn('do not call network tools', prompt)
+
+    def test_folded_workflow_commands_are_bound_without_requiring_yaml_parser(self):
+        path = self.repo/'.github/workflows/ios.yml'
+        path.write_text(path.read_text().replace('run: xcodebuild test', 'run: >-\n          xcodebuild\n          test'))
+        self.git('add','.'); self.git('commit','-qm','Fold workflow command')
+        self.sha = self.git('rev-parse','HEAD').stdout.strip()
+        self.config['meta']['headRefOid'] = self.sha
+        self.run_data['head_sha'] = self.sha
+        self.run_data['pull_requests'][0]['head']['sha'] = self.sha
+        self.job_data['head_sha'] = self.sha
+        self.collect(); self.create()
+
+    def test_duplicate_json_keys_in_complete_declaration_are_rejected(self):
+        entry = json.dumps(self.spec)[:-1] + ', "job":"ios"}'
+        self.plan.write_text('## Tests\n- Remote CI: '+entry+'\n')
+        self.collect(expect=4)
 
     def test_metadata_only_snapshot_supports_offline_pr_review(self):
         self.plan.write_text('[meta] PLAN\n## Tests\n- `python3 -m unittest`\n')

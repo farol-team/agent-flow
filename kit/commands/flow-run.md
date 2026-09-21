@@ -143,7 +143,7 @@ Combinations:
    Verify the kit bin scripts exist and are executable
    (`.claude/bin/parse-verdict`, `harvest-learnings`,
    `render-learnings`, `verify-pr-head`, `merge-reviewed-pr`,
-   `run-stage`, `stage-status`, `review-manifest`, `run-agent`). Missing → stop with
+   `run-stage`, `stage-status`, `review-manifest`, `audit-evidence`, `run-agent`). Missing → stop with
    `Kit bin scripts missing: <path>. Re-run bin/workflow-kit-sync.`
    Do not inline a fallback — hand-parsing verdicts is exactly the
    failure mode these scripts pin down.
@@ -685,6 +685,15 @@ attempt). Create one immutable manifest per acceptance iteration:
   --kit <meta-project>/.claude --output <review-manifest-path>
 ```
 
+For network-isolated acceptance, first capture immutable GitHub PR/CI inputs:
+`.claude/bin/audit-evidence collect --repo <worktree-path> --pr <pr_url>
+--head <reviewed_sha> --plan <plan-file> --output <evidence-file>`.
+Then add `--evidence <evidence-file>` to manifest creation above. This is also
+mandatory for PLAN `Remote CI:` declarations (see `plan-format.md`). Capture
+requires all reported checks passing; unavailable/failed/missing evidence ->
+Review, never a sandbox/network exception. Persist and reuse the same evidence
+on resume. Changing it requires a new manifest and acceptance attempt. The
+audit validates it offline; merge rechecks PR metadata and exact Actions runs.
 Use absolute artifact paths; persist the manifest path with `reviewed_sha`.
 On resume reuse the original manifest, never overwrite it. Pass its path
 to the audit; it must account for every item, all matched rules and a final

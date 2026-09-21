@@ -1,0 +1,220 @@
+#!/usr/bin/env python3
+"""Collect immutable GitHub evidence for a network-isolated acceptance audit.
+
+Only meta calls collect/recheck (network). Review-manifest calls validate
+locally. Evidence binds exact PR/head/PLAN/Actions run attempt/job/step/source.
+This is transport evidence, not an independent assertion that tests suffice.
+"""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
+
+
+def require(ok, message):
+    if not ok:
+        raise ValueError(message)
+
+
+def canonical(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()
+
+
+def digest(value):
+    return hashlib.sha256(canonical(value)).hexdigest()
+
+
+def parse_json(content):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result, 'duplicate JSON key: ' + key)
+            result[key] = value
+        return result
+    return json.loads(content, object_pairs_hook=unique)
+
+
+def load(path):
+    return parse_json(Path(path).read_text())
+
+
+def command(*args):
+    result = subprocess.run([str(a) for a in args], capture_output=True, text=True)
+    require(result.returncode == 0, str(args[0]) + ' failed: ' + result.stderr.strip())
+    return result.stdout
+
+
+def gh(*args):
+    return json.loads(command('gh', *args))
+
+
+def repository(repo):
+    remote = command('git', '-C', repo, 'config', '--get', 'remote.origin.url').strip()
+    match = re.fullmatch(r'(?:https://github\.com/|git@github\.com:)([\w.-]+/[\w.-]+?)(?:\.git)?', remote)
+    require(match is not None, 'evidence requires a canonical github.com origin')
+    return match.group(1)
+
+
+def declarations(plan):
+    """Small explicit contract, never infer which failing tests can use CI."""
+    specs, tests = [], False
+    for line in Path(plan).read_text().splitlines():
+        if line.startswith('## '):
+            tests = line == '## Tests'
+        if 'Remote CI:' not in line:
+            continue
+        require(tests and line.startswith('- Remote CI: '), 'Remote CI declaration must be a Tests list entry')
+        spec = parse_json(line[len('- Remote CI: '):])
+        require(isinstance(spec, dict) and set(spec) == {'command','workflow','job','step','runner','reason'}, 'invalid Remote CI fields')
+        require(all(isinstance(v, str) and v.strip() for v in spec.values()), 'Remote CI fields must be nonempty strings')
+        require(re.fullmatch(r'\.github/workflows/[\w.-]+\.ya?ml', spec['workflow']) is not None, 'invalid workflow path')
+        require(not any(s['command'] == spec['command'] for s in specs), 'duplicate Remote CI command')
+        specs.append(spec)
+    return specs
+
+
+def successful(value, description):
+    require(value.get('status') == 'completed' and value.get('conclusion') == 'success', description + ' must be completed/success')
+
+
+def pr_metadata(pr):
+    fields = ['url','title','body','headRefOid','baseRefOid','baseRefName','headRefName','state','isDraft']
+    raw = gh('pr', 'view', pr, '--json', ','.join(fields))
+    return {key: raw[key] for key in fields}
+
+
+def checks_for(pr):
+    checks = gh('pr', 'checks', pr, '--json', 'name,bucket,link')
+    require(isinstance(checks, list) and checks and all(c.get('bucket') == 'pass' for c in checks), 'CI must be nonempty and all passing')
+    return sorted(checks, key=canonical)
+
+
+def validate(data, repo, head, plan, base=None):
+    require(data.get('version') == 1, 'unsupported evidence version')
+    require(data['repository'] == repository(repo), 'evidence repository changed')
+    require(data['head'] == head and data['pr']['headRefOid'] == head, 'evidence head changed')
+    require(data['plan_sha256'] == hashlib.sha256(Path(plan).read_bytes()).hexdigest(), 'evidence PLAN changed')
+    require(data['pr']['url'] == data['pr_url'] and re.fullmatch(
+        r'https://github\.com/' + re.escape(data['repository']) + r'/pull/[1-9][0-9]*', data['pr_url']), 'evidence PR repository/URL mismatch')
+    require(data['pr']['state'] == 'OPEN' and data['pr']['isDraft'] is False, 'PR must be open and ready for review')
+    if base is not None:
+        require(data['pr']['baseRefOid'] == base, 'evidence base changed')
+    checks = data['checks']
+    require(isinstance(checks, list) and checks and all(c.get('bucket') == 'pass' for c in checks), 'CI must be nonempty and all passing')
+    specs = declarations(plan)
+    require(len(data['remote']) == len(specs), 'required platform checks missing')
+    for spec, item in zip(specs, data['remote']):
+        require(item['requirement'] == spec, 'remote requirements changed')
+        candidates = [c for c in checks if c.get('name') == spec['job']]
+        require(len(candidates) == 1, 'required CI job missing/ambiguous: ' + spec['job'])
+        link = re.fullmatch(r'https://github\.com/' + re.escape(data['repository']) + r'/actions/runs/([1-9][0-9]*)/job/([1-9][0-9]*)', candidates[0].get('link',''))
+        require(link is not None, 'required check must link to an Actions job in this repository')
+        run, job = item['run'], item['job']
+        require(run['id'] == int(link.group(1)) and job['id'] == int(link.group(2)), 'Actions IDs do not match required check')
+        require(job['run_id'] == run['id'] and job['run_attempt'] == run['run_attempt'], 'Actions attempt changed')
+        require(type(run['run_attempt']) is int and run['run_attempt'] > 0, 'invalid run attempt')
+        require(run['repository']['full_name'] == data['repository'] and run['head_repository']['full_name'] == data['repository'], 'Actions repository mismatch (forks unsupported)')
+        require(run['head_sha'] == head and job['head_sha'] == head, 'Actions head does not match reviewed head')
+        require(run['event'] == 'pull_request' and run['path'] == spec['workflow'], 'Actions workflow/event mismatch')
+        pulls = [p for p in run['pull_requests'] if p['number'] == int(data['pr_url'].rsplit('/',1)[1])]
+        require(len(pulls) == 1 and pulls[0]['head']['sha'] == head and
+                pulls[0]['base']['sha'] == data['pr']['baseRefOid'], 'Actions PR/head/base mismatch')
+        require(job['name'] == spec['job'] and spec['runner'] in job['labels'], 'Actions job/platform mismatch')
+        successful(run, 'run'); successful(job, 'job')
+        steps = [s for s in job['steps'] if s.get('name') == spec['step']]
+        require(len(steps) == 1, 'required CI step missing/ambiguous')
+        successful(steps[0], 'required step')
+        source = command('git', '--literal-pathspecs', '-C', repo, 'show', head + ':' + spec['workflow'])
+        require(item['workflow_source'] == source, 'workflow source changed')
+        require(' '.join(spec['command'].split()) in ' '.join(source.split()), 'declared command absent from frozen workflow; audit must also inspect its job/step execution')
+    return data
+
+
+def collect(repo, pr, head, plan):
+    name = repository(repo)
+    require(re.fullmatch(r'https://github\.com/' + re.escape(name) + r'/pull/[1-9][0-9]*', pr), 'PR must belong to the checkout repository')
+    require(re.fullmatch(r'[0-9a-f]{40}', head), 'full reviewed head SHA required')
+    metadata = pr_metadata(pr)
+    checks = checks_for(pr)
+    remote = []
+    for spec in declarations(plan):
+        candidates = [c for c in checks if c.get('name') == spec['job']]
+        require(len(candidates) == 1, 'required CI job missing/ambiguous: ' + spec['job'])
+        link = re.fullmatch(r'https://github\.com/' + re.escape(name) + r'/actions/runs/([1-9][0-9]*)/job/([1-9][0-9]*)', candidates[0].get('link',''))
+        require(link is not None, 'required check must link to an Actions job in this repository')
+        run = gh('api', 'repos/' + name + '/actions/runs/' + link.group(1))
+        job = gh('api', 'repos/' + name + '/actions/jobs/' + link.group(2))
+        # Keep authoritative fields needed to verify identity and test execution;
+        # omit mutable API transport URLs and timing fields from the comparison.
+        run = {k:run[k] for k in ['id','run_attempt','event','path','head_sha','status','conclusion','repository','head_repository','pull_requests']}
+        run['repository'] = {'full_name':run['repository']['full_name']}
+        run['head_repository'] = {'full_name':run['head_repository']['full_name']}
+        run['pull_requests'] = sorted([{'number':p['number'], 'head':{'sha':p['head']['sha']},
+            'base':{'sha':p['base']['sha']}} for p in run['pull_requests']], key=lambda p:p['number'])
+        job = {k:job[k] for k in ['id','run_id','run_attempt','name','head_sha','status','conclusion','labels','steps']}
+        job['steps'] = [{k:s[k] for k in ['name','number','status','conclusion']} for s in job['steps']]
+        remote.append(dict(requirement=spec, run=run, job=job,
+            workflow_source=command('git','--literal-pathspecs','-C',repo,'show',head + ':' + spec['workflow'])))
+    data = dict(version=1, repository=name, pr_url=pr, head=head,
+                plan_sha256=hashlib.sha256(Path(plan).read_bytes()).hexdigest(), pr=metadata, checks=checks, remote=remote)
+    validate(data, repo, head, plan)
+    require(pr_metadata(pr) == metadata and checks_for(pr) == checks, 'PR/checks changed during evidence capture')
+    return data
+
+
+def read_evidence(path, repo, head, plan, base=None):
+    wrapper = load(path)
+    require(wrapper['sha256'] == digest(wrapper['data']), 'evidence digest mismatch')
+    return validate(wrapper['data'], repo, head, plan, base)
+
+
+def write_new(path, data):
+    target = Path(path); target.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp = tempfile.mkstemp(dir=target.parent)
+    try:
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(canonical(dict(sha256=digest(data), data=data)) + b'\n')
+            stream.flush(); os.fsync(stream.fileno())
+        os.link(temp, target)
+    finally:
+        os.unlink(temp)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=['collect','recheck'])
+    parser.add_argument('--repo', required=True)
+    for key in ['pr','head','plan','output','manifest']:
+        parser.add_argument('--' + key)
+    args = parser.parse_args()
+    if args.action == 'collect':
+        require(all([args.pr,args.head,args.plan,args.output]), 'collect requires pr, head, plan, output')
+        data = collect(args.repo,args.pr,args.head,args.plan)
+        write_new(args.output, data)
+        print(json.dumps({'sha256':digest(data),'platform_commands':len(data['remote'])}))
+    else:
+        require(args.manifest, 'recheck requires manifest')
+        manifest = load(args.manifest)
+        path = manifest['inputs'].get('evidence')
+        if path is None:
+            require(not declarations(manifest['inputs']['plan']), 'remote PLAN requires evidence')
+            print('No offline evidence to recheck')
+            return
+        data = read_evidence(path,args.repo,manifest['data']['head'],manifest['inputs']['plan'],manifest['data']['base_tip'])
+        require(not args.pr or args.pr == data['pr_url'], 'merge PR differs from reviewed PR')
+        require(manifest['data']['remote_evidence'] == data, 'manifest evidence changed')
+        require(collect(args.repo,data['pr_url'],data['head'],manifest['inputs']['plan']) == data, 'remote evidence changed; run a new acceptance attempt')
+        print(json.dumps({'sha256':digest(data),'remote':'unchanged'}))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (ValueError, OSError, KeyError, TypeError, IndexError) as error:
+        print('audit-evidence: ' + str(error), file=sys.stderr)
+        sys.exit(4)

@@ -53,6 +53,12 @@ for code PLANs.
 `cd <worktree-path>`; verify `git rev-parse HEAD` is `<reviewed-sha>`
 and `git diff --quiet HEAD --` succeeds before AND after the checks.
 Mismatch or dirty tracked files -> `BLOCKED: checkout changed`.
+If the manifest contains `data.remote_evidence`, run `.claude/bin/review-manifest
+inputs --repo <worktree-path> --base origin/<base> --head <reviewed-sha>
+--manifest <review-manifest-path>` before AND after the audit. Nonzero means
+BLOCKED: stale evidence. Read the frozen PR/Actions records in that manifest;
+do not call network tools. Meta collected them and rechecks them before merge.
+They are authoritative remote records, NOT commands you ran locally.
 Run the eight checks below in order. Do NOT
 short-circuit — the human deserves a full picture if multiple things
 broke.
@@ -70,7 +76,9 @@ minor to important to "be safe"; never demote a real defect to minor to
 pass the card.
 
 **Evidence discipline (Article II).** Every verdict you emit must be
-backed by command output you produced in THIS run. Never write "should
+backed by command output you produced in THIS run. The sole remote exception
+is validated `data.remote_evidence`: quote the PR record or exact Actions
+run/job/attempt/step and clearly identify it as remote execution. Never write "should
 pass" / "looks correct" as a check result — run the command. If you did
 not verify something, say so in the gap text rather than guessing.
 
@@ -143,7 +151,19 @@ Gap: `Out of scope violated: <which item, what change>`.
 
 ## 4. Tests pass
 
-For each command in `## Tests`:
+For each ordinary command in `## Tests`, run it locally in THIS audit.
+A `- Remote CI: {...}` entry is an explicit, approved platform requirement:
+validate its manifest evidence and inspect the frozen workflow plus referenced
+scripts to establish that this exact job/step executes the declared command,
+checks out the reviewed head (or its merge with the frozen base), uses the
+required platform, and cannot mask failure (`continue-on-error`, `|| true`,
+conditional skips). The helper proves API bindings, not workflow semantics.
+Verify the stated platform limitation with a fresh local tool/platform probe.
+If executable locally, also run it locally; a local failure is always a gap.
+Do not relabel a failed/missing ordinary test as remote, infer coverage from
+an unrelated green check, or accept a declaration without matching evidence.
+If any binding or workflow behavior is unverifiable, report BLOCKED/gaps.
+For local commands:
 
 ```bash
 cd <worktree-path>
@@ -155,6 +175,10 @@ Verify exit 0. No `--no-run`, no dry flags — actually execute.
 Gap: `Test <command> failed. Output: <last 20 lines>`.
 
 ## 5. PR metadata correct
+
+With validated `data.remote_evidence`, inspect its `pr.title` and `pr.body`
+instead of running `gh`. Otherwise use the live command below; unavailable
+network means BLOCKED, never skipped validation.
 
 ```bash
 gh pr view <pr_url> --json title,body
@@ -366,6 +390,9 @@ paths). A report of bare assertions with no references fails.
 Gap: `Findings lack source citations (e.g. <claim>).`
 
 ## R5. PR metadata
+
+Use the validated manifest's frozen `pr` metadata as in code Check 5 when
+available; otherwise run:
 
 ```bash
 gh pr view <pr_url> --json title,body

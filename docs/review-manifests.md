@@ -106,3 +106,69 @@ GitHub transport. They cover missing/duplicate/failed coverage, invented
 exclusions/quotes, configuration and input drift, file grouping, renames,
 deletions/binaries/unusual paths, and rejection at the actual merge helper.
 Run all commands in [CONTRIBUTING](../CONTRIBUTING.md) before upgrading a kit.
+
+## Network-isolated audits and platform-specific CI
+
+Codex acceptance has read-only source, isolated writable temporary storage,
+and disabled shell network. It cannot run `gh pr view`; a Linux host also
+cannot execute Xcode. Do not broaden that sandbox or waive either check.
+Instead meta can freeze the external inputs before starting a fresh audit:
+
+```sh
+.claude/bin/audit-evidence collect \
+  --repo /path/to/worktree --pr https://github.com/OWNER/REPO/pull/123 \
+  --head FULL_REVIEWED_SHA --plan /path/to/run/plan.md \
+  --output /path/to/run/evidence-iter1.json
+```
+
+Add `--evidence /path/to/run/evidence-iter1.json` to `review-manifest create`.
+The snapshot must not be overwritten. The audit receives it embedded in
+`data.remote_evidence` and uses its frozen PR title/body instead of live `gh`.
+`review-manifest inputs` with the usual repo/base/head/manifest flags validates
+all inputs without a verdict, before and after the audit, entirely offline.
+
+For unavailable platform commands the approved PLAN's `## Tests` explicitly
+maps each command to an Actions workflow, exact job name, step and runner:
+
+```text
+- Remote CI: {"command":"xcodebuild test", "workflow":".github/workflows/ios.yml", "job":"ios", "step":"Test iOS", "runner":"macos-15", "reason":"Xcode requires macOS; audit host is Linux"}
+```
+
+This is opt-in per command, not a setting that permits arbitrary test bypass.
+A remote declaration without evidence fails manifest creation. All ordinary
+Tests commands still run locally in the fresh audit. The reviewer probes the
+claimed platform limitation; if the command is executable locally it also
+runs locally. A local failure always remains a gap regardless of green CI.
+Changing the PLAN requires approval and new evidence/manifest/audit inputs.
+
+The collector requires nonempty, all-passing PR checks; it fetches authoritative
+GitHub Actions run and job records for each declared command. It verifies the
+repository, exact reviewed head, workflow path, run ID and attempt, job ID/name,
+runner label, successful completed job and uniquely named successful completed
+step. It freezes the workflow source from Git at the reviewed head. The command
+must occur in that file (whitespace normalized for folded YAML). The reviewer must additionally inspect the
+job/step and referenced scripts: checkout must use the reviewed head or its
+merge with the frozen base; conditions and shell behavior must not skip or
+mask the command's failure. A matching string alone proves no such semantics.
+Records identify authoritative remote execution, not tests the reviewer ran.
+Do not claim test counts or assertion output absent from these API records.
+
+Snapshot content and plan bytes are checked and included in manifest identity.
+Before merge, `merge-reviewed-pr` fetches the same PR/check/run/job data again
+and requires exact equality, including PR title/body, all check links and run
+attempts. A rerun, missing required platform check, pending/skipped/failed
+check, changed PR or head invalidates acceptance even if an unrelated check
+is green. It then revalidates local review inputs and uses the existing
+server-side head-match merge gate. No worker or acceptance process acquires
+new write/network permissions.
+
+Deliberate limits: github.com, same-repository `pull_request` Actions runs,
+and unique job/step names only. Forks, external CI, reusable-workflow path
+indirection, dynamically generated step commands, and generalized artifacts
+are unsupported and fail closed. This version uses authoritative run/job
+records rather than log downloads or result artifacts; a PLAN requiring
+specific logs/artifacts still blocks until that evidence can be independently
+verified. Hashes detect mutation, not a malicious meta: trusted orchestration
+is still assumed. As with the existing merge gate, GitHub does not atomically
+freeze mutable PR metadata/check state/base with the merge request; enforce
+branch protection or a merge queue when atomic policy enforcement is needed.

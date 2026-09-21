@@ -27,6 +27,8 @@ fi
 # Check again after querying CI; GitHub enforces the same SHA at merge time.
 "$VERIFY" "$PR" "$TREE" "$BRANCH" "$BASE" "$SHA" >/dev/null
 verify_review
+"$BIN/audit-evidence" recheck --repo "$TREE" --pr "$PR" --manifest "$MANIFEST" >/dev/null
+verify_review
 # Keep the branch/worktree for inspection; cleanup belongs to /flow-clean.
 gh pr merge "$PR" "--$STRATEGY" --match-head-commit "$SHA"
 STATE="$(gh pr view "$PR" --json state)"
