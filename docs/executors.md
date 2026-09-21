@@ -125,5 +125,19 @@ and the command files. Do not overwrite an existing AGENTS.md or copy the kit
 into a second location. Native Codex skills are an optional entry point, not
 required for executor selection; this change does not install slash commands.
 
+### Model policy for Codex-led projects
+
+When Codex authors or materially revises a PLAN, use a separate read-only
+Codex pass with `gpt-6-astra` to check its acceptance criteria, test coverage,
+scope and risks before the plan is accepted. Record the exact PLAN hash and
+the review result in the tracker; resolve every substantive finding and have
+the revised hash reviewed again. If Astra reports no findings, execute the
+accepted plan with `gpt-5.6-sol` as the worker model. Keep the independent
+test-critic and acceptance gates enabled. These model names are project policy,
+not defaults imposed on every Agent Flow installation; authenticate and verify
+both models with the configured Codex CLI before launching a run. If Astra is
+unavailable, do not silently treat a Sol review or the TDD test-critic as the
+plan review.
+
 Official references: [Codex non-interactive execution](https://learn.chatgpt.com/docs/non-interactive-mode),
 [Codex project instructions](https://learn.chatgpt.com/docs/agent-configuration/agents-md).
