@@ -289,3 +289,26 @@ durable request. Worker policy and fresh audit sessions are unchanged.
 **Limits.** Checks that require source writes or network still fail closed.
 Scratch artifacts remain for inspection and require later cleanup. This fixes
 test fixture creation, not every project's build or service prerequisites.
+
+## Frozen external evidence for offline acceptance
+
+**Problem.** The Codex read-only audit also disables shell network, while
+acceptance requires live PR metadata. A Linux audit cannot run platform-only
+gates such as Xcode even when exact-head macOS CI has succeeded. Retrying the
+worker cannot resolve either environment mismatch.
+
+**Mechanism.** Meta captures immutable PR metadata and authoritative Actions
+run/job/step records before audit. An approved PLAN may map specific unavailable
+platform commands to exact workflow/job/step/runner requirements. The review
+manifest binds this evidence to repository, head, base and PLAN; acceptance
+validates it offline and independently inspects source/workflow semantics.
+Fresh locally executable tests remain mandatory. Merge refetches and compares
+the remote evidence, so edited PR metadata, reruns and missing/stale/failed
+platform checks invalidate the review instead of inheriting an old approval.
+
+**Limits.** Only same-repository github.com pull-request Actions is supported.
+API records establish remote step completion, not test counts or workflow
+correctness. The independent reviewer must check checkout and command/failure
+semantics; unavailable required artifacts still block. Trusted meta remains
+part of the threat model, and no sandbox permission is broadened. See the
+[protocol](review-manifests.md#network-isolated-audits-and-platform-specific-ci).

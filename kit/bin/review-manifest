@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import subprocess
 import sys
 import tempfile
@@ -170,6 +171,11 @@ def build(repo, base_ref, head_ref, paths):
                 head=head, base=base, base_tip=base_tip, plan_sha256=hashlib.sha256(Path(paths['plan']).read_bytes()).hexdigest(),
                 config_sha256=digest(config), kit_sha256=kit_identity(paths['kit']),
                 items=items, groups=groups, rules=cfg['rules'])
+    evidence = runpy.run_path(str(Path(__file__).with_name('audit-evidence')))
+    if paths.get('evidence'):
+        data['remote_evidence'] = evidence['read_evidence'](paths['evidence'], repo, head, paths['plan'], base_tip)
+    else:
+        require(not evidence['declarations'](paths['plan']), 'remote PLAN requires evidence')
     return dict(identity=digest(data), data=data, inputs=paths)
 
 
@@ -258,24 +264,29 @@ def validate(manifest, verdict, repo):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['create', 'check', 'verify'])
+    parser.add_argument('action', choices=['create', 'inputs', 'check', 'verify'])
     for flag in ['repo', 'base', 'head']:
         parser.add_argument('--' + flag, required=True)
-    for flag in ['config', 'plan', 'kit', 'manifest', 'verdict', 'output']:
+    for flag in ['config', 'plan', 'kit', 'manifest', 'verdict', 'output', 'evidence']:
         parser.add_argument('--' + flag)
     args = parser.parse_args()
     if args.action == 'create':
         require(all([args.config, args.plan, args.kit, args.output]), 'create requires config, plan, kit, output')
         paths = {key: str(Path(getattr(args, key)).resolve()) for key in ['config', 'plan', 'kit']}
+        if args.evidence:
+            paths['evidence'] = str(Path(args.evidence).resolve())
         manifest = build(args.repo, args.base, args.head, paths)
         write_new(args.output, manifest)
         print(json.dumps({'identity': manifest['identity'], 'files': len(manifest['data']['items']), 'groups': len(manifest['data']['groups'])}))
         return 0
-    require(args.manifest and args.verdict, 'check/verify requires manifest and verdict')
+    require(args.manifest and (args.verdict or args.action == 'inputs'), 'check/verify requires manifest and verdict')
     manifest = load(args.manifest)
     require(isinstance(manifest, dict) and isinstance(manifest.get('inputs'), dict), 'invalid manifest')
     current = build(args.repo, args.base, args.head, manifest['inputs'])
     require(manifest == current, 'review inputs changed; run a new acceptance attempt')
+    if args.action == 'inputs':
+        print(json.dumps({'identity': manifest['identity'], 'inputs': 'unchanged'}))
+        return 0
     result = validate(manifest, load(args.verdict), args.repo)
     print(json.dumps(result))
     return 0 if (result['accepted'] if args.action == 'verify' else result['coverage'] == 'complete') else 3

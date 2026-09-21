@@ -63,6 +63,18 @@ Examples by toolchain (the actual command comes from the target's
 - **node** — test `pnpm test <path>` / `npm test`; lint the project's eslint/prettier gate.
 - **docs** — no code gates.
 
+**Unavailable platform gates.** A platform-only command may use GitHub Actions
+evidence when that limitation is explicit in the approved PLAN. In `## Tests`
+write exactly one JSON list entry per remote command (all fields required):
+- Remote CI: {"command":"xcodebuild test", "workflow":".github/workflows/ios.yml", "job":"ios", "step":"Test iOS", "runner":"macos-15", "reason":"Xcode requires macOS; audit host is Linux"}
+The command must appear in that workflow (whitespace normalized), and the independent audit
+must verify the named step actually executes it without masking failure.
+Choose an exact unique job/step and runner label, not a workflow-wide badge.
+All normal locally executable gates remain fresh audit commands; CI cannot
+replace a local failure. Do not retrofit this exception after a test fails:
+changing the PLAN requires renewed approval and a new evidence/manifest/audit.
+Only same-repository github.com pull_request Actions runs are supported.
+
 **Scoping rule.** Scope every gate to what the card touches — a single
 crate/package/path, not the whole project. Use project-wide forms only when
 the card deliberately covers the whole project (`## Files` spanning three or
